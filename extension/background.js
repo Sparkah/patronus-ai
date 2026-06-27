@@ -280,7 +280,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "SPEAK": sendResponse(await slngSpeak(msg)); break;
         case "RESEARCH": sendResponse(await tavilyResearch(msg)); break;
         case "OPEN_GAME": sendResponse(await openGame()); break;
-        case "GAME_URL": { const qq = String(msg.query || "").toLowerCase(); let url; if (/brainrot|meme|2048/.test(qq)) { url = "https://game-factory.tech/play?slug=brainrot_2048"; } else { const c = await getCfg(); url = c.games[Math.floor(Math.random() * c.games.length)]; } sendResponse({ url }); break; }
+        case "GAME_URL": { const qq = String(msg.query || "").toLowerCase(); let url; if (/brainrot|meme|2048/.test(qq)) { url = "https://game-factory.tech/games/brainrot_2048/"; } else { const c = await getCfg(); url = c.games[Math.floor(Math.random() * c.games.length)]; } sendResponse({ url }); break; }
         case "ACT": sendResponse(await routeIntent(msg)); break;
         case "OPEN_URL": sendResponse(await openUrl(msg)); break;
         case "SITE_SEARCH": sendResponse(await siteSearch(msg)); break;
