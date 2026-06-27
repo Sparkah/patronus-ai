@@ -395,10 +395,13 @@
     const products = extractProducts();
     if (products.length) {
       const list = products.slice(0, 10).map((p, i) => `${i + 1}. ${p.name} - ${p.price}`).join("\n");
-      const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(), via: lastVia,
-        message: `I searched "${query}". Products on this page:\n${list}\n\nPick the 2-3 best for me. For EACH, give its name and ONE short reason it fits (price, value, use or style). Be specific and genuinely helpful, in your character's voice. Under 60 words total.` });
-      const tag = "✦ site search · Gemini reasoning" + (r && r.minima ? ` · Mubit ${r.minima}` : "") + (muted ? "" : " · SLNG voice");
-      botReply((r && r.text) || "here's what I'd pick for you!", { links: products.slice(0, 4).map(p => ({ url: p.url, label: `${p.name} - ${p.price}` })), tag });
+      const prompt = `I searched "${query}". Products on this page:\n${list}\n\nPick the 2-3 best for me - call out the CHEAPEST one explicitly. For EACH, give its name and ONE short reason it fits (price, value, use or style). Be specific and helpful, in your character's voice. Under 60 words total.`;
+      let text = "", src = "Gemini reasoning", minimaBit = "";
+      const sie = await send({ type: "SIE_GEN", prompt, system: soul, via: lastVia });   // open Qwen first
+      if (sie && sie.ok && sie.text) { text = sie.text; src = "Superlinked (open Qwen)"; }
+      else { const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(), via: lastVia, message: prompt }); text = (r && r.text) || ""; if (r && r.minima) minimaBit = ` · Mubit ${r.minima}`; }
+      const tag = `✦ site search · ${src}${minimaBit}` + (muted ? "" : " · SLNG voice");
+      botReply(text || "here's what I'd pick for you!", { links: products.slice(0, 4).map(p => ({ url: p.url, label: `${p.name} - ${p.price}` })), tag });
     } else {
       const text = document.body ? document.body.innerText.slice(0, 9000) : "";
       const r = await send({ type: "PAGE_QA", soul, question: `I searched "${query}". Recommend 2-3 results that fit me and why, briefly.`, text, via: lastVia });

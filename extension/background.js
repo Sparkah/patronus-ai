@@ -221,6 +221,29 @@ async function slRecall({ query }) {
     return { ok: r.ok, results: j.results || j.hits || [] };
   } catch (e) { return { error: "sl_fetch" }; }
 }
+// Superlinked SIE: open-model (Qwen) generation via the OpenAI-compatible gateway.
+// Short timeout: when the cluster model is warm we use it; when cold we return null
+// and the caller falls back to Gemini so the demo never hangs.
+const SIE_MODEL = "Qwen/Qwen3.5-4B";
+async function sieGenerate({ prompt, system, via }) {
+  const cfg = await getCfg();
+  if (!cfg.superlinkedUrl) return { ok: false };
+  try {
+    const base = cfg.superlinkedUrl.replace(/\/$/, "");
+    const messages = []; if (system) messages.push({ role: "system", content: String(system).slice(0, 1500) });
+    messages.push({ role: "user", content: prompt });
+    const r = await fetchT(base + "/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + cfg.superlinkedToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: SIE_MODEL, messages, max_tokens: 180 })
+    }, 6000);
+    const j = await r.json().catch(() => ({}));
+    const text = j?.choices?.[0]?.message?.content;
+    if (!r.ok || !text) return { ok: false };   // cold/loading -> caller falls back
+    logEvent({ sponsor: "Superlinked", op: "generate (open Qwen)", via: via || prompt, request: { endpoint: base + "/v1/chat/completions", model: SIE_MODEL, user: prompt.slice(0, 220) }, response: { text } });
+    return { ok: true, text: text.trim() };
+  } catch (e) { return { ok: false }; }
+}
 
 // ---- agentic router: turn "find flip flops on harrods" into a real action ----
 async function routeIntent({ soul, message, name, history }) {
@@ -286,6 +309,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "N8N_RUN": sendResponse(await n8nRun(msg)); break;
         case "SL_REMEMBER": sendResponse(await slRemember(msg)); break;
         case "SL_RECALL": sendResponse(await slRecall(msg)); break;
+        case "SIE_GEN": sendResponse(await sieGenerate(msg)); break;
         case "GET_POWERS": { const c = await getCfg(); sendResponse({ gemini: !!c.geminiKey, slng: !!c.slngKey, tavily: !!c.tavilyKey, mubit: !!c.mubitKey, n8n: !!c.n8nWebhook, superlinked: !!c.superlinkedUrl }); break; }
         default: sendResponse({ error: "unknown_message" });
       }
