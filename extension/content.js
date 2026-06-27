@@ -392,7 +392,7 @@
     if (products.length) {
       const list = products.slice(0, 10).map((p, i) => `${i + 1}. ${p.name} - ${p.price}`).join("\n");
       const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(),
-        message: `I searched "${query}" and these are the products on the page:\n${list}\n\nIn character, recommend the 2-3 that best fit me and say why in one short line each, by name.` });
+        message: `I searched "${query}". Products on this page:\n${list}\n\nPick the 2-3 best for me. For EACH, give its name and ONE short reason it fits (price, value, use or style). Be specific and genuinely helpful, in your character's voice. Under 60 words total.` });
       const tag = "✦ site search · Gemini reasoning" + (r && r.minima ? ` · Mubit ${r.minima}` : "") + (muted ? "" : " · SLNG voice");
       botReply((r && r.text) || "here's what I'd pick for you!", { links: products.slice(0, 4).map(p => ({ url: p.url, label: `${p.name} - ${p.price}` })), tag });
     } else {
