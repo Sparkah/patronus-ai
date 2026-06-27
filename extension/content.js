@@ -42,10 +42,12 @@
       @keyframes bob{to{transform:translateY(-8px)}}
       .pet.nap{animation:none;transform:rotate(8deg) scale(.92);filter:drop-shadow(0 4px 8px rgba(0,0,0,.2)) grayscale(.2)}
       .zzz{position:fixed;font-size:18px;pointer-events:none;color:#7c8aa0;font-weight:800;z-index:3}
-      .bubble{position:fixed;max-width:240px;background:#fff;color:#1b2330;border:1px solid #e7eaf0;padding:9px 13px;
-        border-radius:14px 14px 14px 5px;font:600 13.5px/1.45 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;
-        box-shadow:0 10px 26px rgba(20,30,55,.18);pointer-events:none;opacity:0;transform:translateY(6px);
-        transition:opacity .2s,transform .2s;z-index:4}
+      .bubble{position:fixed;max-width:230px;background:#fff;color:#1b2330;border:1px solid #e7eaf0;padding:9px 13px;
+        border-radius:16px;font:600 13.5px/1.45 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;
+        box-shadow:0 10px 26px rgba(20,30,55,.18);pointer-events:none;opacity:0;transform:translateY(6px) scale(.96);
+        transform-origin:bottom right;transition:opacity .18s,transform .18s;z-index:4}
+      .bubble::after{content:"";position:absolute;right:26px;bottom:-7px;width:13px;height:13px;background:#fff;
+        border-right:1px solid #e7eaf0;border-bottom:1px solid #e7eaf0;transform:rotate(45deg)}
       .bubble.show{opacity:1;transform:none}
       .bubble .nm{display:block;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ac);margin-bottom:2px}
       .panel{position:fixed;right:26px;bottom:120px;width:320px;background:#f7f8fb;border:1px solid #e7eaf0;border-radius:18px;
@@ -134,13 +136,24 @@
     catch (e) { return `You are ${cur().name}, a friendly browser guardian.`; }
   }
 
-  function positionNear() { const r = pet.getBoundingClientRect(); bubble.style.left = Math.max(10, r.left - 170) + "px"; bubble.style.top = Math.max(10, r.top - 16) + "px"; }
+  // place the speech bubble ABOVE the pet, right-aligned, never overlapping it
+  function positionNear() {
+    const r = pet.getBoundingClientRect();
+    const bw = bubble.offsetWidth || 220, bh = bubble.offsetHeight || 56;
+    let left = Math.max(10, Math.min(r.right - bw, window.innerWidth - bw - 10));
+    let top = r.top - bh - 14;
+    if (top < 10) top = Math.min(window.innerHeight - bh - 10, r.bottom + 14); // flip below if no room
+    bubble.style.left = left + "px"; bubble.style.top = top + "px";
+  }
   function say(text, { speak = true } = {}) {
     if (!text) return;
-    positionNear();
-    bubble.innerHTML = `<span class="nm">${esc(cur().name)}</span>${esc(text)}`;
-    bubble.classList.add("show"); clearTimeout(bubbleTimer);
-    bubbleTimer = setTimeout(() => bubble.classList.remove("show"), Math.min(9000, 2600 + text.length * 45));
+    if (!panel.classList.contains("open")) {           // panel open -> the thread shows it; skip the floating bubble
+      bubble.innerHTML = `<span class="nm">${esc(cur().name)}</span>${esc(text)}`;
+      bubble.classList.add("show");
+      positionNear();                                  // measure AFTER content is set
+      clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(() => bubble.classList.remove("show"), Math.min(9000, 2600 + text.length * 45));
+    }
     if (speak && !muted) voice(text);
   }
   async function voice(text) {
