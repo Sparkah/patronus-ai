@@ -98,6 +98,11 @@
   const pet = $("pet"), emojiEl = $("emoji"), petimg = $("petimg"), petvid = $("petvid"), bubble = $("bubble");
   const panel = $("panel"), thread = $("thread"), inp = $("inp");
   const send = msg => new Promise(res => { try { chrome.runtime.sendMessage(msg, res); } catch (e) { res({ error: "no_bg" }); } });
+  // when the extension is reloaded, this OLD content script's context dies. detect it and
+  // self-destruct cleanly instead of throwing "Extension context invalidated" from stale timers.
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } };
+  function teardown() { clearTimeout(bubbleTimer); clearTimeout(idleTimer); clearTimeout(wanderTimer); try { if (audio) audio.pause(); } catch (e) {} try { if (recog) recog.stop(); } catch (e) {} try { host.remove(); } catch (e) {} }
+  const store = { get: (k, cb) => { try { chrome.storage.local.get(k, cb); } catch (e) {} }, set: o => { try { chrome.storage.local.set(o); } catch (e) {} }, remove: k => { try { chrome.storage.local.remove(k); } catch (e) {} } };
   const esc = s => (s || "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   const escA = s => (s || "").replace(/"/g, "%22");
   const cur = () => CHARS[charId] || CHARS[DEFAULT_CHAR];
@@ -126,8 +131,8 @@
     }).join("");
     thread.scrollTop = thread.scrollHeight;
   }
-  function pushMsg(role, text, extra) { history.push(Object.assign({ role, text }, extra || {})); if (history.length > 40) history = history.slice(-40); renderThread(); chrome.storage.local.set({ ["chat_" + charId]: history }); }
-  function loadHistory() { chrome.storage.local.get(["chat_" + charId], d => { history = Array.isArray(d["chat_" + charId]) ? d["chat_" + charId] : []; renderThread(); }); }
+  function pushMsg(role, text, extra) { history.push(Object.assign({ role, text }, extra || {})); if (history.length > 40) history = history.slice(-40); renderThread(); store.set({ ["chat_" + charId]: history }); }
+  function loadHistory() { store.get(["chat_" + charId], d => { history = Array.isArray(d["chat_" + charId]) ? d["chat_" + charId] : []; renderThread(); }); }
   function recentContext() { return history.slice(-8).map(m => ({ role: m.role === "you" ? "user" : "model", text: m.text })); }
 
   async function getSoul() {
@@ -214,7 +219,7 @@
   }
 
   // ---- behaviors: nap when idle, wander across the page -----------------------
-  function resetIdle() { pet.classList.remove("nap"); pet.style.animation = ""; clearTimeout(idleTimer); idleTimer = setTimeout(() => { pet.classList.add("nap"); puff("💤"); }, 45000); }
+  function resetIdle() { pet.classList.remove("nap"); pet.style.animation = ""; clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (!alive()) return teardown(); pet.classList.add("nap"); puff("💤"); }, 45000); }
   function puff(txt) { const r = pet.getBoundingClientRect(); const z = document.createElement("div"); z.className = "zzz"; z.textContent = txt; z.style.left = (r.right - 18) + "px"; z.style.top = (r.top - 6) + "px"; root.appendChild(z); z.animate([{ opacity: 0 }, { opacity: 1, offset: .3 }, { opacity: 0, transform: "translateY(-34px)" }], { duration: 1800, easing: "ease-out" }).onfinish = () => z.remove(); }
   // confetti burst from the pet (celebrate actions / tricks)
   function confetti(cx, cy) {
@@ -233,6 +238,7 @@
   function spark(x, y, ch) { const s = document.createElement("div"); s.textContent = ch; s.style.cssText = `position:fixed;left:${x}px;top:${y}px;font-size:18px;z-index:3;pointer-events:none`; root.appendChild(s); s.animate([{ opacity: .9, transform: "scale(1)" }, { opacity: 0, transform: "scale(.5) translateY(20px)" }], { duration: 900 }).onfinish = () => s.remove(); }
 
   function specialMove() {
+    if (!alive()) return teardown();
     if (panel.classList.contains("open")) return scheduleWander();
     const vw = window.innerWidth;
     pet.style.transition = "transform 2.4s cubic-bezier(.4,0,.4,1)";
@@ -249,6 +255,7 @@
     let i = 0; const moves = 7;
     pet.style.transition = "left .5s cubic-bezier(.34,1.4,.5,1), top .5s cubic-bezier(.34,1.4,.5,1), transform .5s";
     (function step() {
+      if (!alive()) return teardown();
       if (i++ >= moves) { pet.style.transition = ""; pet.style.transform = ""; confetti(); scheduleWander(); return; }
       const x = 30 + Math.random() * Math.max(60, window.innerWidth - 150);
       const y = 30 + Math.random() * Math.max(60, window.innerHeight - 150);
@@ -263,7 +270,7 @@
   let dragMoved = false;
   pet.addEventListener("click", () => { if (!dragMoved) togglePanel(); });
   $("px").addEventListener("click", () => togglePanel(false));
-  $("pmute").addEventListener("click", () => { muted = !muted; chrome.storage.local.set({ muted }); $("pmute").textContent = muted ? "🔇" : "🔊"; });
+  $("pmute").addEventListener("click", () => { muted = !muted; store.set({ muted }); $("pmute").textContent = muted ? "🔇" : "🔊"; });
   $("go").addEventListener("click", submit);
   inp.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
 
@@ -292,7 +299,7 @@
   function hostMatch(h) { try { const base = String(h || "").replace(/^www\./, "").split(".")[0]; return base && location.hostname.includes(base); } catch (e) { return false; } }
 
   function checkPending() {
-    chrome.storage.local.get(["pendingSearch", "pendingSuggest"], d => {
+    store.get(["pendingSearch", "pendingSuggest"], d => {
       const now = Date.now();
       const ps = d.pendingSearch;
       if (ps && now - (ps.ts || 0) < 60000 && hostMatch(ps.host)) {
@@ -303,7 +310,7 @@
       }
       const sg = d.pendingSuggest;
       if (sg && now - (sg.ts || 0) < 90000 && hostMatch(sg.host) && /[?&/](q|k|query|search|searchterm)=|\/search|\/s\b|results/i.test(location.href)) {
-        chrome.storage.local.remove("pendingSuggest");
+        store.remove("pendingSuggest");
         setTimeout(() => suggestFromResults(sg.query), 2600);
       }
     });
@@ -370,8 +377,8 @@
     await dismissCookies();
     const inp = await findSearchInput();
     if (!inp) return;   // not found (maybe mid-redirect) - leave pendingSearch so the next page-load retries
-    chrome.storage.local.remove("pendingSearch");            // committed on THIS page
-    chrome.storage.local.set({ pendingSuggest: { host: location.hostname, query, ts: Date.now() } });
+    store.remove("pendingSearch");            // committed on THIS page
+    store.set({ pendingSuggest: { host: location.hostname, query, ts: Date.now() } });
     togglePanel(true);
     lastVia = `find "${query}"`;
     botReply(`found the search bar - looking for "${query}"...`);
@@ -436,7 +443,7 @@
   }
 
   // boot
-  chrome.storage.local.get(["activeChar", "muted"], d => {
+  store.get(["activeChar", "muted"], d => {
     if (d.activeChar && CHARS[d.activeChar]) charId = d.activeChar;
     muted = !!d.muted; $("pmute").textContent = muted ? "🔇" : "🔊";
     applyChar(); loadHistory();                         // per-character chat
