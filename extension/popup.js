@@ -1,12 +1,15 @@
 // Patronus AI popup: your soul collection + the daily "come back tomorrow" unlock.
 // Keys are baked in (config.local.js) so judges never type anything.
 const ROSTER = [
-  { id: "grandma", e: "👵", n: "Surf Granny" },
-  { id: "cat",     e: "🐱", n: "Mochi" },
-  { id: "dog",     e: "🐶", n: "Biscuit" },
-  { id: "pupa",    e: "🐛", n: "Pupa" }      // last one stays locked: come back tomorrow
+  { id: "grandma",  e: "👵", n: "Surf Granny" },
+  { id: "tungtung", e: "🪵", n: "Tung Tung" },
+  { id: "sixseven", e: "✋", n: "Six Seven" },
+  { id: "cat",      e: "🐱", n: "Mochi" },
+  { id: "dog",      e: "🐶", n: "Biscuit" },
+  { id: "pupa",     e: "🐛", n: "Pupa" },
+  { id: "skibidi",  e: "🚽", n: "Skibidi" }
 ];
-const START_UNLOCKED = ["grandma", "cat", "dog"]; // 3 available now, 1 hidden
+const START_UNLOCKED = ["grandma", "tungtung", "sixseven", "cat", "dog"]; // 5 now; pupa + skibidi coming soon
 const $ = id => document.getElementById(id);
 const todayStr = () => new Date().toISOString().slice(0, 10);
 

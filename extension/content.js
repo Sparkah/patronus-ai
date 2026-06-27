@@ -12,8 +12,14 @@
                quips: ["this is the BEST website EVER!", "did you say fetch?? i can fetch the WEB!", "you're doing amazing!!", "squirrel-- wait. focus. hi!"] },
     grandma: { name: "Surf Granny", emoji: "👵", board: "🏄", accent: "#8ecbff", voice: "aura-2-theia-en",
                quips: ["cowabunga, sweetie.", "back in my day, pages LOADED slow.", "let granny google that for ya.", "hold my knitting, i'm surfing."] },
+    tungtung: { name: "Tung Tung", emoji: "🪵", accent: "#c79a5b", voice: "aura-2-orion-en",
+               quips: ["tung tung tung tung TUNG!", "i bonk bad websites.", "sahur! up we go.", "bonk. problem solved."] },
+    sixseven: { name: "Six Seven", emoji: "✋", accent: "#7fc7f5", voice: "aura-2-thalia-en",
+               quips: ["six... seveeen!", "is it 6 or 7? yes.", "ayy, six seven kiddo.", "not 5, not 8. six seven."] },
     pupa:    { name: "Pupa",        emoji: "🐛", accent: "#9be08a", voice: "aura-2-luna-en",
-               quips: ["metamorphosis: 73% complete.", "one day i'll be a butterfly API.", "breathe. you're becoming something.", "small steps. tiny legs."] }
+               quips: ["metamorphosis: 73% complete.", "one day i'll be a butterfly API.", "breathe. you're becoming something.", "small steps. tiny legs."] },
+    skibidi: { name: "Skibidi",     emoji: "🚽", accent: "#bcccdc", voice: "aura-2-orion-en",
+               quips: ["skibidi dop dop yes yes.", "flush. brb.", "still booting up...", "coming soon, kinda."] }
   };
   const DEFAULT_CHAR = "grandma";
 
@@ -36,8 +42,11 @@
         animation:bob 2.6s ease-in-out infinite alternate;transition:transform .15s;z-index:3;}
       .pet:active{cursor:grabbing}
       .pet img{width:100%;height:100%;object-fit:contain;display:none;-webkit-user-drag:none;pointer-events:none}
+      .pet video{width:100%;height:100%;object-fit:cover;border-radius:16px;display:none;pointer-events:none}
       .pet.hasimg #emoji{display:none}
       .pet.hasimg img{display:block}
+      .pet.hasvid #emoji,.pet.hasvid img{display:none}
+      .pet.hasvid video{display:block}
       @keyframes bob{to{transform:translateY(-8px)}}
       .pet.nap{animation:none;transform:rotate(8deg) scale(.92);filter:drop-shadow(0 4px 8px rgba(0,0,0,.2)) grayscale(.2)}
       .zzz{position:fixed;font-size:18px;opacity:0;pointer-events:none;color:#7c8aa0;font-weight:800;z-index:3}
@@ -68,7 +77,7 @@
         border:1px solid #eef1f6;border-radius:9px;padding:7px 10px;background:#fff}
       .muted{color:#94a0b2;font-size:12px}
     </style>
-    <div class="pet" id="pet"><img id="petimg" alt="" draggable="false"><span id="emoji">👵</span></div>
+    <div class="pet" id="pet"><video id="petvid" muted loop autoplay playsinline></video><img id="petimg" alt="" draggable="false"><span id="emoji">👵</span></div>
     <div class="bubble" id="bubble"></div>
     <div class="panel" id="panel">
       <div class="phead"><span class="av" id="pav">👵</span><b id="pnm">Surf Granny</b><span class="x" id="px">✕</span></div>
@@ -85,7 +94,7 @@
   (document.documentElement || document.body).appendChild(host);
 
   const $ = id => root.getElementById(id);
-  const pet = $("pet"), emojiEl = $("emoji"), petimg = $("petimg"), bubble = $("bubble");
+  const pet = $("pet"), emojiEl = $("emoji"), petimg = $("petimg"), petvid = $("petvid"), bubble = $("bubble");
   const panel = $("panel"), out = $("out"), inp = $("inp");
 
   // ---- helpers --------------------------------------------------------------
@@ -97,11 +106,14 @@
     const c = cur();
     host.style.setProperty("--ac", c.accent);
     [pet, panel, bubble].forEach(el => el.style.setProperty("--ac", c.accent));
-    emojiEl.textContent = c.emoji;            // fallback if art fails to load
-    pet.classList.remove("hasimg");
-    petimg.onload = () => pet.classList.add("hasimg");
+    emojiEl.textContent = c.emoji;            // last-resort fallback
+    pet.classList.remove("hasimg", "hasvid");
+    petimg.onload = () => { if (!pet.classList.contains("hasvid")) pet.classList.add("hasimg"); };
     petimg.onerror = () => pet.classList.remove("hasimg");
     try { petimg.src = chrome.runtime.getURL("chars/" + charId + ".png"); } catch (e) {}
+    petvid.onloadeddata = () => { pet.classList.add("hasvid"); petvid.play().catch(() => {}); };
+    petvid.onerror = () => pet.classList.remove("hasvid");
+    try { petvid.src = chrome.runtime.getURL("chars/" + charId + ".mp4"); petvid.load(); } catch (e) {}
     $("pav").textContent = c.emoji; $("pnm").textContent = c.name;
   }
 
