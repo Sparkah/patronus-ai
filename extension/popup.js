@@ -74,7 +74,7 @@ function render() {
 
 // read-only powers strip - shows which partner powers are wired (no key values)
 function loadPowers() {
-  const labels = { gemini: "Gemini", tavily: "Tavily", slng: "SLNG voice", mubit: "Mubit" };
+  const labels = { gemini: "Gemini", slng: "SLNG voice", tavily: "Tavily", mubit: "Mubit", n8n: "n8n", superlinked: "Superlinked" };
   chrome.runtime.sendMessage({ type: "GET_POWERS" }, p => {
     p = p || {};
     $("powers").innerHTML = Object.keys(labels).map(k =>

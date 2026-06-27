@@ -16,7 +16,8 @@ const DEFAULT_GAMES = ["https://game-factory.tech", "https://tims-arcade.pages.d
 
 async function getCfg() {
   const d = await chrome.storage.local.get([
-    "GEMINI_API_KEY", "GEMINI_MODEL", "SLNG_API_KEY", "TAVILY_API_KEY", "MUBIT_API_KEY", "GAMES", "muted"
+    "GEMINI_API_KEY", "GEMINI_MODEL", "SLNG_API_KEY", "TAVILY_API_KEY", "MUBIT_API_KEY",
+    "N8N_WEBHOOK_URL", "SUPERLINKED_URL", "SUPERLINKED_TOKEN", "GAMES", "muted"
   ]);
   return {
     geminiKey: d.GEMINI_API_KEY || DEF.GEMINI_API_KEY || "",
@@ -24,6 +25,9 @@ async function getCfg() {
     slngKey: d.SLNG_API_KEY || DEF.SLNG_API_KEY || "",
     tavilyKey: d.TAVILY_API_KEY || DEF.TAVILY_API_KEY || "",
     mubitKey: d.MUBIT_API_KEY || DEF.MUBIT_API_KEY || "",
+    n8nWebhook: d.N8N_WEBHOOK_URL || DEF.N8N_WEBHOOK_URL || "",
+    superlinkedUrl: d.SUPERLINKED_URL || DEF.SUPERLINKED_URL || "",
+    superlinkedToken: d.SUPERLINKED_TOKEN || DEF.SUPERLINKED_TOKEN || "",
     games: (Array.isArray(d.GAMES) && d.GAMES.length) ? d.GAMES : DEFAULT_GAMES,
     muted: !!d.muted
   };
@@ -68,13 +72,15 @@ async function minimaFeedback(recommendationId, modelId, usage) {
 }
 
 // ---- Gemini: a soul-driven reply (model chosen by Minima) -------------------
-async function callGemini(model, key, sys, message) {
+async function callGemini(model, key, sys, message, history) {
   const url = `${GEMINI_BASE}/${model}:generateContent?key=${encodeURIComponent(key)}`;
+  const contents = (Array.isArray(history) ? history : []).map(h => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: String(h.text || "").slice(0, 600) }] }));
+  contents.push({ role: "user", parts: [{ text: message }] });
   const r = await fetchT(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: sys }] },
-      contents: [{ role: "user", parts: [{ text: message }] }],
+      contents,
       generationConfig: { temperature: 0.9, maxOutputTokens: 220 }
     })
   });
@@ -85,15 +91,15 @@ async function callGemini(model, key, sys, message) {
   return { ok: true, text, usage: { in: u.promptTokenCount || 0, out: u.candidatesTokenCount || 0 } };
 }
 
-async function geminiReply({ soul, message, context, taskType }) {
+async function geminiReply({ soul, message, context, taskType, history }) {
   const cfg = await getCfg();
   if (!cfg.geminiKey) return { error: "no_gemini_key", text: "(Add a Gemini key so I can think.)" };
   const sys = (soul || "You are a friendly browser companion.") + (context ? `\n\n## Current page context (may help)\n${context.slice(0, 8000)}` : "");
   const pick = await minimaPick(message, taskType || "creative");
   let model = (pick && pick.modelId) || cfg.geminiModel;
   try {
-    let res = await callGemini(model, cfg.geminiKey, sys, message);
-    if (!res.ok && model !== cfg.geminiModel) { model = cfg.geminiModel; res = await callGemini(model, cfg.geminiKey, sys, message); } // fallback
+    let res = await callGemini(model, cfg.geminiKey, sys, message, history);
+    if (!res.ok && model !== cfg.geminiModel) { model = cfg.geminiModel; res = await callGemini(model, cfg.geminiKey, sys, message, history); } // fallback
     if (!res.ok) return { error: "gemini_" + (res.status || "x"), text: res.errMsg || "Gemini hiccup." };
     if (pick && pick.recommendationId) minimaFeedback(pick.recommendationId, model, res.usage); // fire and forget
     return { text: res.text, model, minima: pick ? model : null, est: pick ? pick.est : null };
@@ -155,8 +161,10 @@ async function openUrl({ url }) {
 // Open a site, then drive ITS OWN search box (explore-then-search) - works on
 // stores whose URL search params we don't know (Harrods, Zara, ...).
 async function siteSearch({ site, query }) {
-  const url = /^https?:\/\//.test(site) ? site : "https://" + String(site || "").replace(/^\/+/, "");
-  if (!/^https?:\/\/[^/]+\./.test(url)) return { error: "bad_site" };
+  let s = String(site || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!s) return { error: "bad_site" };
+  if (!s.includes(".")) s += ".com";   // "harrods" -> "harrods.com"
+  const url = "https://" + s;
   const tab = await chrome.tabs.create({ url });
   await new Promise(res => {
     const to = setTimeout(() => { try { chrome.tabs.onUpdated.removeListener(l); } catch (e) {} res(); }, 10000);
@@ -196,22 +204,64 @@ async function siteSearch({ site, query }) {
   } catch (e) { return { opened: url, searched: query, found: false }; }
 }
 
+// ---- n8n: fire a workflow via its webhook (automations / reminders) ----------
+async function n8nRun({ task }) {
+  const cfg = await getCfg();
+  if (!cfg.n8nWebhook) return { error: "no_n8n" };
+  try {
+    const r = await fetchT(cfg.n8nWebhook, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task, source: "patronus-ai" })
+    }, 9000);
+    return { ok: r.ok, status: r.status };
+  } catch (e) { return { error: "n8n_fetch" }; }
+}
+
+// ---- Superlinked: remember a page / recall it semantically -------------------
+function slHeaders(cfg) {
+  return { "Content-Type": "application/json", ...(cfg.superlinkedToken ? { "Authorization": "Bearer " + cfg.superlinkedToken } : {}) };
+}
+async function slRemember({ text, url, title }) {
+  const cfg = await getCfg();
+  if (!cfg.superlinkedUrl) return { error: "no_superlinked" };
+  try {
+    const r = await fetchT(cfg.superlinkedUrl.replace(/\/$/, "") + "/ingest", { method: "POST", headers: slHeaders(cfg), body: JSON.stringify({ text, url, title }) }, 9000);
+    return { ok: r.ok };
+  } catch (e) { return { error: "sl_fetch" }; }
+}
+async function slRecall({ query }) {
+  const cfg = await getCfg();
+  if (!cfg.superlinkedUrl) return { error: "no_superlinked" };
+  try {
+    const r = await fetchT(cfg.superlinkedUrl.replace(/\/$/, "") + "/query", { method: "POST", headers: slHeaders(cfg), body: JSON.stringify({ query, limit: 5 }) }, 9000);
+    const j = await r.json().catch(() => ({}));
+    return { ok: r.ok, results: j.results || j.hits || [] };
+  } catch (e) { return { error: "sl_fetch" }; }
+}
+
 // ---- agentic router: turn "find flip flops on harrods" into a real action ----
-async function routeIntent({ soul, message, name }) {
+async function routeIntent({ soul, message, name, history }) {
   const cfg = await getCfg();
   if (!cfg.geminiKey) return { action: "answer" };
+  const recent = (Array.isArray(history) ? history : []).slice(-6).map(h => `${h.role === "user" ? "User" : (name || "You")}: ${String(h.text || "").slice(0, 160)}`).join("\n");
   const sys =
     `You are the intent router for a browser guardian character${name ? " named " + name : ""}. ` +
-    `Personality (for the spoken line only):\n${(soul || "").slice(0, 1000)}\n\n` +
-    `Decide what the user wants. Reply ONLY with minified JSON: ` +
-    `{"action":"site_search"|"navigate"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
-    `- A NAMED online store/brand (Harrods, Zara, ASOS, Nike, eBay, etc.): action="site_search", ` +
-    `site=its domain (e.g. "harrods.com"), query=the search terms. Do NOT guess its search URL. ` +
-    `- Amazon: action="navigate", url="https://www.amazon.co.uk/s?k=QUERY" (url-encoded). ` +
+    `Personality (for the spoken line only):\n${(soul || "").slice(0, 800)}\n\n` +
+    (recent ? `Recent conversation (memory/context):\n${recent}\n\n` : "") +
+    `STRONGLY prefer a real ACTION over just answering whenever the user says find / get / show / open / go / buy / where / play / watch / research / remind. ` +
+    `Reply ONLY with minified JSON: {"action":"site_search"|"navigate"|"page_qa"|"web_research"|"play_game"|"automate"|"recall"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
+    `- A NAMED online store/brand (Harrods, Zara, Nike, eBay...): action="site_search", site=its domain (e.g. "harrods.com"), query=search terms. Do NOT guess its search URL. ` +
+    `- Amazon: action="navigate", url="https://www.amazon.co.uk/s?k=QUERY". ` +
+    `- A shop/brand/place + a location, or "near me"/"in <city>": action="navigate", url="https://www.google.com/maps/search/QUERY". ` +
     `- Videos: action="navigate", url="https://www.youtube.com/results?search_query=QUERY". ` +
-    `- General facts/lookups: action="navigate", url="https://www.google.com/search?q=QUERY". ` +
-    `- Just chatting: action="answer". ` +
-    `"say" = ONE short in-character spoken line under 22 words about what you're doing.`;
+    `- General web lookups/facts: action="navigate", url="https://www.google.com/search?q=QUERY". ` +
+    `- "summarize/explain/what's on THIS page/article": action="page_qa". ` +
+    `- "research X / latest on X / dig into X": action="web_research", query=topic. ` +
+    `- "I'm bored / play a game / entertain me": action="play_game". ` +
+    `- Schedule/remind/automate: action="automate", query=the automation. ` +
+    `- Recall ("what did I see about...", "that page I saved about..."): action="recall", query=topic. ` +
+    `- Only pure conversation: action="answer". ` +
+    `URL-encode queries. "say" = ONE short in-character spoken line under 22 words.`;
   try {
     const r = await fetchT(`${GEMINI_BASE}/${cfg.geminiModel}:generateContent?key=${encodeURIComponent(cfg.geminiKey)}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -226,6 +276,11 @@ async function routeIntent({ soul, message, name }) {
     let t = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text).join("").trim().replace(/^```json/i, "").replace(/```$/, "").trim();
     const o = JSON.parse(t);
     if (o.action === "site_search" && o.site && o.query) return { action: "site_search", site: o.site, query: o.query, say: o.say || "On it!" };
+    if (o.action === "automate" && o.query) return { action: "automate", query: o.query, say: o.say || "Setting that up!" };
+    if (o.action === "recall" && o.query) return { action: "recall", query: o.query, say: o.say || "Let me remember..." };
+    if (o.action === "page_qa") return { action: "page_qa", say: o.say || "Reading this page..." };
+    if (o.action === "web_research") return { action: "web_research", query: o.query || message, say: o.say || "Searching the web..." };
+    if (o.action === "play_game") return { action: "play_game", say: o.say || "Let's play!" };
     if (o.action === "navigate" && /^https?:\/\//.test(o.url || "")) return { action: "navigate", url: o.url, say: o.say || "On it!" };
     return { action: "answer", say: o.say || "" };
   } catch (e) { return { action: "answer" }; }
@@ -236,18 +291,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
       switch (msg && msg.type) {
-        case "CHAT": sendResponse(await geminiReply({ soul: msg.soul, message: msg.message, context: msg.context, taskType: "creative" })); break;
-        case "PAGE_QA": sendResponse(await geminiReply({ soul: msg.soul, message: msg.question, context: msg.text, taskType: "qa" })); break;
+        case "CHAT": sendResponse(await geminiReply({ soul: msg.soul, message: msg.message, context: msg.context, taskType: "creative", history: msg.history })); break;
+        case "PAGE_QA": sendResponse(await geminiReply({ soul: msg.soul, message: msg.question, context: msg.text, taskType: "qa", history: msg.history })); break;
         case "SPEAK": sendResponse(await slngSpeak(msg)); break;
         case "RESEARCH": sendResponse(await tavilyResearch(msg)); break;
         case "OPEN_GAME": sendResponse(await openGame()); break;
         case "ACT": sendResponse(await routeIntent(msg)); break;
         case "OPEN_URL": sendResponse(await openUrl(msg)); break;
         case "SITE_SEARCH": sendResponse(await siteSearch(msg)); break;
-        case "GET_POWERS": { const c = await getCfg(); sendResponse({ gemini: !!c.geminiKey, slng: !!c.slngKey, tavily: !!c.tavilyKey, mubit: !!c.mubitKey }); break; }
+        case "N8N_RUN": sendResponse(await n8nRun(msg)); break;
+        case "SL_REMEMBER": sendResponse(await slRemember(msg)); break;
+        case "SL_RECALL": sendResponse(await slRecall(msg)); break;
+        case "GET_POWERS": { const c = await getCfg(); sendResponse({ gemini: !!c.geminiKey, slng: !!c.slngKey, tavily: !!c.tavilyKey, mubit: !!c.mubitKey, n8n: !!c.n8nWebhook, superlinked: !!c.superlinkedUrl }); break; }
         default: sendResponse({ error: "unknown_message" });
       }
     } catch (e) { sendResponse({ error: "handler_crash", detail: String(e) }); }
   })();
   return true; // async
 });
+
+// Re-inject the content script into already-open tabs on install/update/reload,
+// so a reloaded extension takes over stale tabs without a manual page refresh.
+chrome.runtime.onInstalled.addListener(reinjectAll);
+chrome.runtime.onStartup && chrome.runtime.onStartup.addListener(reinjectAll);
+async function reinjectAll() {
+  try {
+    const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+    for (const t of tabs) {
+      try { await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["content.js"] }); } catch (e) {}
+    }
+  } catch (e) {}
+}
