@@ -283,8 +283,9 @@
       const now = Date.now();
       const ps = d.pendingSearch;
       if (ps && now - (ps.ts || 0) < 60000 && hostMatch(ps.host)) {
-        chrome.storage.local.remove("pendingSearch");
-        setTimeout(() => runVisibleSearch(ps.query), 1600);
+        // keep pendingSearch until the search actually finds the box, so a redirect
+        // (e.g. adidas.com -> adidas.co.uk) lets the next page-load retry it.
+        setTimeout(() => runVisibleSearch(ps.query), 1400);
         return;
       }
       const sg = d.pendingSuggest;
@@ -353,17 +354,18 @@
     setTimeout(() => { if (location.href === before) location.href = location.origin + "/search?q=" + encodeURIComponent(val); }, 2600); // URL fallback
   }
   async function runVisibleSearch(query) {
-    togglePanel(true);
-    lastVia = `find "${query}"`;
-    botReply(`let me find the search bar and look for "${query}"...`);
     await dismissCookies();
     const inp = await findSearchInput();
-    if (!inp) { botReply("hmm, i couldn't find this site's search box."); return; }
+    if (!inp) return;   // not found (maybe mid-redirect) - leave pendingSearch so the next page-load retries
+    chrome.storage.local.remove("pendingSearch");            // committed on THIS page
+    chrome.storage.local.set({ pendingSuggest: { host: location.hostname, query, ts: Date.now() } });
+    togglePanel(true);
+    lastVia = `find "${query}"`;
+    botReply(`found the search bar - looking for "${query}"...`);
     await movePetTo(inp);
-    spark(inp.getBoundingClientRect().left + 20, inp.getBoundingClientRect().top - 6, "✨");
+    try { spark(inp.getBoundingClientRect().left + 20, inp.getBoundingClientRect().top - 6, "✨"); } catch (e) {}
     await typeVisibly(inp, query);
     await sleep(450);
-    chrome.storage.local.set({ pendingSuggest: { host: location.hostname, query, ts: Date.now() } });
     submitSearch(inp);
   }
   // scrape REAL product cards (image + short text + product link) off a results page
