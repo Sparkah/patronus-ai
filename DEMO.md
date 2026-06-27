@@ -1,44 +1,43 @@
-# Patronus AI - 90-second demo script
+# Patronus AI - demo run-of-show
 
-One Chrome extension: pick a meme "guardian" that lives on every page, talks back in a
-real voice, and actually does things. Every beat lights up a different sponsor.
+A Chrome extension: pick a meme guardian that lives on every page, talks back in a
+real voice, and does real tasks on the open web. Every beat lights up a sponsor.
 
-## Setup (off camera)
-- Load `extension/` unpacked in Chrome (keys are baked into `config.local.js`).
-- In the popup, hit **🧹 Reset for demo** (clears all chats + the sponsor log) so it's fresh.
-- Have a normal site open (any), and the popup pinned.
+## Pre-flight (before judges, ~1 min)
+1. chrome://extensions -> reload Patronus AI. Open a normal website (not chrome://).
+2. Practice query once: "find me cheapest flip flops" (warms the SIE cluster + cookies).
+3. Popup -> 🧹 Reset for demo (clears chat + log so you start clean).
+4. Mute toggle (🔊 in the panel header) if the room is loud.
 
-## The run
-1. **Pick a guardian.** Open the popup -> show the roster + the locked "coming soon"
-   tile (daily-unlock retention). Pick **Surf Granny**. She appears on the page,
-   animated, and greets you out loud.  *(Gemini art + Veo animation, SLNG voice)*
-2. **Shop, hands-free - the hero beat.** Click the mic and SAY
-   *"find me adidas flip flops."* She walks to Adidas's own search bar, types it,
-   lands on results, and recommends specific pairs with reasons, tagged
-   `site search - Gemini - Mubit - SLNG voice`.  *(whole stack, one real action)*
-3. **Research.** *"what do reviews say about Adilette slides?"* -> live answer + sources. *(Tavily)*
-4. **Switch souls.** Pick **Tung Tung** -> fresh chat, new personality + voice. *(per-character memory)*
-5. **Go wild.** *"do a dance"* / *"fly around"* -> she zooms the screen with confetti. *(wow factor)*
-6. **Play your game.** *"play the brainrot game"* -> `brainrot_2048` opens in an
-   in-browser overlay, playable inline. *(ties in the game factory)*
-7. **Show the receipts (the proof beat).** Open the popup -> **📊 Sponsor log**. It
-   groups every partner call by request: for "find flip flops" you see SLNG + Mubit +
-   Gemini, each expandable to the *real* request and response. This is where each
-   sponsor sees their tech genuinely load-bearing.
-8. **Close.** "One guardian: Gemini thinks, SLNG speaks, Tavily searches, Mubit keeps
-   it cheap - and a new soul every day so you come back."
+## The run (~2 min)
+1. Hook (10s): "Pick a guardian, it lives on every page." Open popup, show the souls +
+   the locked "coming soon" tile, pick Surf Granny -> she appears, animated, greets out
+   loud.  (SLNG voice, Gemini/Veo art)
+2. Agentic moment (30s, LEAD): click the mic and SAY "find me the cheapest flip flops."
+   She opens Amazon, walks to the search bar, types, lands on results, recommends the
+   cheapest with links. Reply tag: site search - Superlinked semantic rank - Gemini -
+   Mubit - SLNG.  (four sponsors, one action). Frame: "hands-free, never leave my page."
+3. Research (15s): "research the best flip-flop brands" -> grounded answer + sources. (Tavily)
+4. Fun (15s): "do a dance" -> flies around with confetti. Switch to Tung Tung (new voice). (creativity)
+5. Game (15s): "play the brainrot game" -> brainrot_2048 in the in-browser overlay. (your factory)
+6. The receipts (20s, closer): popup -> 📊 Sponsor log (pony page). Open the
+   "find flip flops" group -> Superlinked + Mubit + Gemini + SLNG, each with the real
+   API call. "Every sponsor, genuinely used - here are the receipts."
+7. Close: "Gemini thinks, SLNG speaks, Tavily searches, Mubit keeps it cheap, Superlinked
+   ranks on open models - and a new soul every day."
 
-## Sponsor map (each judge sees their tech)
-- **Gemini (Google DeepMind)** - reasoning, intent routing, product picks; character art + Veo.
-- **SLNG** - every spoken reply, plus voice input.
-- **Tavily** - the research beat (real web search + sources).
-- **Mubit / Minima** - picks the cheapest capable model per call (shown in the reply tag).
-- **Aikido** - repo security scan (connect the GitHub repo, screenshot the report).
-- **Superlinked** - semantic memory (optional; "coming soon" until the cluster URL is set).
+## Each sponsor's moment
+- Gemini (Google DeepMind): the brain - routing, product reasoning, art/animation (beats 1-5).
+- SLNG: speaks every reply + voice input via the mic (beats 1, 2, 4).
+- Tavily: the research beat (3).
+- Mubit / Minima: the model pick, in the shopping reply + the log (2, 6).
+- Superlinked (SIE): semantic product ranking via open embeddings, in the tag + the log (2, 6).
+- Aikido: repo security scan - not in this log; show the scan report on its own.
+
+## Reliability
+- Shopping takes ~10-15s (cookies, redirect, search) - narrate "watch her drive the bar."
+- If SIE is cold the suggestion still works (falls back to Gemini), so you're never stuck.
+- Demo on a normal site; reset the log between the practice run and the real run.
 
 ## Track
-Open Innovation. Uses 4 partner techs live (Gemini, SLNG, Tavily, Mubit) - exceeds the 3 required.
-
-## Judging fit
-Technical: a real MV3 agent that drives third-party sites visibly. Creativity: meme
-guardians with souls + voices. Real problem: hands-free shopping/answers from any page.
+Open Innovation. 4 partner techs live (Gemini, SLNG, Tavily, Mubit) + Superlinked via SIE.
