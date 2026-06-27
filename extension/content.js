@@ -35,8 +35,9 @@
         font-size:60px;line-height:1;filter:drop-shadow(0 8px 14px rgba(0,0,0,.28));
         animation:bob 2.6s ease-in-out infinite alternate;transition:transform .15s;z-index:3;}
       .pet:active{cursor:grabbing}
-      .pet .board{position:absolute;bottom:-10px;font-size:34px;opacity:0;transition:opacity .2s}
-      .pet.surf .board{opacity:1}
+      .pet img{width:100%;height:100%;object-fit:contain;display:none;-webkit-user-drag:none;pointer-events:none}
+      .pet.hasimg #emoji{display:none}
+      .pet.hasimg img{display:block}
       @keyframes bob{to{transform:translateY(-8px)}}
       .pet.nap{animation:none;transform:rotate(8deg) scale(.92);filter:drop-shadow(0 4px 8px rgba(0,0,0,.2)) grayscale(.2)}
       .zzz{position:fixed;font-size:18px;opacity:0;pointer-events:none;color:#7c8aa0;font-weight:800;z-index:3}
@@ -67,7 +68,7 @@
         border:1px solid #eef1f6;border-radius:9px;padding:7px 10px;background:#fff}
       .muted{color:#94a0b2;font-size:12px}
     </style>
-    <div class="pet" id="pet"><span id="emoji">👵</span><span class="board" id="board">🏄</span></div>
+    <div class="pet" id="pet"><img id="petimg" alt="" draggable="false"><span id="emoji">👵</span></div>
     <div class="bubble" id="bubble"></div>
     <div class="panel" id="panel">
       <div class="phead"><span class="av" id="pav">👵</span><b id="pnm">Surf Granny</b><span class="x" id="px">✕</span></div>
@@ -84,7 +85,7 @@
   (document.documentElement || document.body).appendChild(host);
 
   const $ = id => root.getElementById(id);
-  const pet = $("pet"), emojiEl = $("emoji"), boardEl = $("board"), bubble = $("bubble");
+  const pet = $("pet"), emojiEl = $("emoji"), petimg = $("petimg"), bubble = $("bubble");
   const panel = $("panel"), out = $("out"), inp = $("inp");
 
   // ---- helpers --------------------------------------------------------------
@@ -95,11 +96,12 @@
   function applyChar() {
     const c = cur();
     host.style.setProperty("--ac", c.accent);
-    root.host.style.setProperty("--ac", c.accent);
     [pet, panel, bubble].forEach(el => el.style.setProperty("--ac", c.accent));
-    emojiEl.textContent = c.emoji;
-    boardEl.style.display = c.board ? "" : "none";
-    boardEl.textContent = c.board || "";
+    emojiEl.textContent = c.emoji;            // fallback if art fails to load
+    pet.classList.remove("hasimg");
+    petimg.onload = () => pet.classList.add("hasimg");
+    petimg.onerror = () => pet.classList.remove("hasimg");
+    try { petimg.src = chrome.runtime.getURL("chars/" + charId + ".png"); } catch (e) {}
     $("pav").textContent = c.emoji; $("pnm").textContent = c.name;
   }
 

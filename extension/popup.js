@@ -44,14 +44,18 @@ function doUnlock() {
 
 function render() {
   const active = ROSTER.find(c => c.id === S.activeChar) || ROSTER[0];
-  $("heroE").textContent = active.e; $("heroN").textContent = active.n;
+  $("heroE").innerHTML = ""; const hi = document.createElement("img"); hi.src = `chars/${active.id}.png`; hi.alt = "";
+  hi.onerror = () => { $("heroE").textContent = active.e; }; $("heroE").appendChild(hi);
+  $("heroN").textContent = active.n;
   $("streak").textContent = S.streak > 1 ? `🔥 ${S.streak}-day streak` : "";
 
   $("grid").innerHTML = ROSTER.map(c => {
     const unlocked = S.unlocked.includes(c.id);
     const cls = "tile" + (c.id === S.activeChar ? " active" : "") + (unlocked ? "" : " locked");
-    return `<div class="${cls}" data-id="${c.id}"><div class="e">${c.e}</div><div class="t">${unlocked ? c.n : "???"}</div></div>`;
+    const face = unlocked ? `<img class="te" src="chars/${c.id}.png" data-e="${c.e}" alt="">` : `<div class="e">${c.e}</div>`;
+    return `<div class="${cls}" data-id="${c.id}">${face}<div class="t">${unlocked ? c.n : "???"}</div></div>`;
   }).join("");
+  $("grid").querySelectorAll("img.te").forEach(img => img.onerror = () => { const d = document.createElement("div"); d.className = "e"; d.textContent = img.dataset.e; img.replaceWith(d); });
   document.querySelectorAll(".tile").forEach(t => t.addEventListener("click", () => setActive(t.dataset.id)));
 
   const box = $("unlockBox");
