@@ -233,8 +233,7 @@ async function routeIntent({ soul, message, name, history }) {
     (recent ? `Recent conversation (memory/context):\n${recent}\n\n` : "") +
     `STRONGLY prefer a real ACTION over just answering whenever the user says find / get / show / open / go / buy / where / play / watch / research / remind. ` +
     `Reply ONLY with minified JSON: {"action":"site_search"|"navigate"|"page_qa"|"web_research"|"play_game"|"perform"|"recall"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
-    `- A NAMED online store/brand (Harrods, Zara, Nike, eBay...): action="site_search", site=its domain (e.g. "harrods.com"), query=search terms. Do NOT guess its search URL. ` +
-    `- Amazon: action="navigate", url="https://www.amazon.co.uk/s?k=QUERY". ` +
+    `- SHOPPING for a product ("find / buy / get / cheapest / show me <product>", with or WITHOUT a store): action="site_search". If a store/brand is named use its domain (e.g. "harrods.com", "nike.com", "amazon.co.uk"); if NO store is named, default site="amazon.co.uk". query=the product terms. Do NOT guess a search URL. ` +
     `- A shop/brand/place + a location, or "near me"/"in <city>": action="navigate", url="https://www.google.com/maps/search/QUERY". ` +
     `- Videos: action="navigate", url="https://www.youtube.com/results?search_query=QUERY". ` +
     `- General web lookups/facts: action="navigate", url="https://www.google.com/search?q=QUERY". ` +
