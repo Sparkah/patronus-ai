@@ -182,7 +182,8 @@ async function siteSearch({ site, query }) {
   if (!s) return { error: "bad_site" };
   if (!s.includes(".")) s += ".com";   // "harrods" -> "harrods.com"
   const url = "https://" + s;
-  await chrome.storage.local.set({ pendingSearch: { host: s, query, ts: Date.now() } });
+  let q = String(query || ""); try { if (/%[0-9a-f]{2}/i.test(q)) q = decodeURIComponent(q); } catch (e) {}  // un-encode if the model encoded it
+  await chrome.storage.local.set({ pendingSearch: { host: s, query: q, ts: Date.now() } });
   await chrome.tabs.create({ url, active: true });
   return { opened: url, searched: query };
 }
@@ -244,6 +245,29 @@ async function sieGenerate({ prompt, system, via }) {
     return { ok: true, text: text.trim() };
   } catch (e) { return { ok: false }; }
 }
+// Superlinked SIE: semantic ranking via open embeddings (reliable; the gen model is
+// often cold). One batched /v1/embeddings call ranks the products by the query.
+async function sieRank({ query, items, via }) {
+  const cfg = await getCfg();
+  if (!cfg.superlinkedUrl || !Array.isArray(items) || !items.length) return { ok: false };
+  try {
+    const base = cfg.superlinkedUrl.replace(/\/$/, "");
+    const list = items.slice(0, 10);
+    const input = [query, ...list];
+    const r = await fetchT(base + "/v1/embeddings", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + cfg.superlinkedToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "sentence-transformers/all-MiniLM-L6-v2", input })
+    }, 12000);
+    const j = await r.json().catch(() => ({}));
+    const vecs = (j.data || []).map(d => d.embedding);
+    if (!r.ok || vecs.length !== input.length) return { ok: false };
+    const q = vecs[0], cos = (a, b) => { let s = 0, na = 0, nb = 0; for (let i = 0; i < a.length; i++) { s += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; } return s / (Math.sqrt(na * nb) || 1); };
+    const order = list.map((it, i) => ({ i, score: cos(q, vecs[i + 1]) })).sort((a, b) => b.score - a.score);
+    logEvent({ sponsor: "Superlinked", op: "embeddings rank (SIE)", via: via || query, request: { endpoint: base + "/v1/embeddings", model: "all-MiniLM-L6-v2", query, items: list.length }, response: { top: order.slice(0, 3).map(o => ({ item: list[o.i].slice(0, 40), score: +o.score.toFixed(3) })) } });
+    return { ok: true, order: order.map(o => o.i) };
+  } catch (e) { return { ok: false }; }
+}
 
 // ---- agentic router: turn "find flip flops on harrods" into a real action ----
 async function routeIntent({ soul, message, name, history }) {
@@ -266,7 +290,7 @@ async function routeIntent({ soul, message, name, history }) {
     `- "fly around / dance / spin / go crazy / do a trick / show off / animate yourself / draw stuff": action="perform" (a fun on-screen animation). ` +
     `- Recall ("what did I see about...", "that page I saved about..."): action="recall", query=topic. ` +
     `- Only pure conversation: action="answer". ` +
-    `URL-encode queries. "say" = ONE short in-character spoken line under 22 words.`;
+    `URL-encode queries ONLY inside navigate URLs; the site_search "query" must be PLAIN text (no %20). "say" = ONE short in-character spoken line under 22 words.`;
   try {
     const r = await fetchT(`${GEMINI_BASE}/${cfg.geminiModel}:generateContent?key=${encodeURIComponent(cfg.geminiKey)}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -310,6 +334,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "SL_REMEMBER": sendResponse(await slRemember(msg)); break;
         case "SL_RECALL": sendResponse(await slRecall(msg)); break;
         case "SIE_GEN": sendResponse(await sieGenerate(msg)); break;
+        case "SIE_RANK": sendResponse(await sieRank(msg)); break;
         case "GET_POWERS": { const c = await getCfg(); sendResponse({ gemini: !!c.geminiKey, slng: !!c.slngKey, tavily: !!c.tavilyKey, mubit: !!c.mubitKey, n8n: !!c.n8nWebhook, superlinked: !!c.superlinkedUrl }); break; }
         default: sendResponse({ error: "unknown_message" });
       }

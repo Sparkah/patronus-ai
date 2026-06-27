@@ -394,14 +394,16 @@
     const soul = await getSoul();
     const products = extractProducts();
     if (products.length) {
-      const list = products.slice(0, 10).map((p, i) => `${i + 1}. ${p.name} - ${p.price}`).join("\n");
-      const prompt = `I searched "${query}". Products on this page:\n${list}\n\nPick the 2-3 best for me - call out the CHEAPEST one explicitly. For EACH, give its name and ONE short reason it fits (price, value, use or style). Be specific and helpful, in your character's voice. Under 60 words total.`;
-      let text = "", src = "Gemini reasoning", minimaBit = "";
-      const sie = await send({ type: "SIE_GEN", prompt, system: soul, via: lastVia });   // open Qwen first
-      if (sie && sie.ok && sie.text) { text = sie.text; src = "Superlinked (open Qwen)"; }
-      else { const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(), via: lastVia, message: prompt }); text = (r && r.text) || ""; if (r && r.minima) minimaBit = ` · Mubit ${r.minima}`; }
-      const tag = `✦ site search · ${src}${minimaBit}` + (muted ? "" : " · SLNG voice");
-      botReply(text || "here's what I'd pick for you!", { links: products.slice(0, 4).map(p => ({ url: p.url, label: `${p.name} - ${p.price}` })), tag });
+      // Superlinked SIE: semantically rank the products by the query (open embeddings)
+      let ranked = products, slBit = "";
+      const rk = await send({ type: "SIE_RANK", query, items: products.map(p => p.name), via: lastVia });
+      if (rk && rk.ok && Array.isArray(rk.order)) { ranked = rk.order.map(i => products[i]).filter(Boolean); slBit = " · Superlinked semantic rank"; }
+      const list = ranked.slice(0, 10).map((p, i) => `${i + 1}. ${p.name} - ${p.price}`).join("\n");
+      const prompt = `I searched "${query}". Products (ranked by relevance):\n${list}\n\nPick the 2-3 best for me - call out the CHEAPEST explicitly. For EACH, name + ONE short reason it fits (price, value, use or style). Specific and helpful, in your character's voice. Under 60 words.`;
+      const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(), via: lastVia, message: prompt });
+      const minimaBit = (r && r.minima) ? ` · Mubit ${r.minima}` : "";
+      const tag = `✦ site search${slBit} · Gemini reasoning${minimaBit}` + (muted ? "" : " · SLNG voice");
+      botReply((r && r.text) || "here's what I'd pick for you!", { links: ranked.slice(0, 4).map(p => ({ url: p.url, label: `${p.name} - ${p.price}` })), tag });
     } else {
       const text = document.body ? document.body.innerText.slice(0, 9000) : "";
       const r = await send({ type: "PAGE_QA", soul, question: `I searched "${query}". Recommend 2-3 results that fit me and why, briefly.`, text, via: lastVia });
