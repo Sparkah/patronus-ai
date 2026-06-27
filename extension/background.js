@@ -146,6 +146,45 @@ async function openGame() {
   return { opened: url };
 }
 
+async function openUrl({ url }) {
+  if (!url || !/^https?:\/\//.test(url)) return { error: "bad_url" };
+  await chrome.tabs.create({ url });
+  return { opened: url };
+}
+
+// ---- agentic router: turn "find me flip flops on amazon" into a real action ---
+async function routeIntent({ soul, message, name }) {
+  const cfg = await getCfg();
+  if (!cfg.geminiKey) return { action: "answer" };
+  const sys =
+    `You are the intent router for a browser guardian character${name ? " named " + name : ""}. ` +
+    `Personality (for the spoken line only):\n${(soul || "").slice(0, 1200)}\n\n` +
+    `Decide if the user wants you to GO somewhere or FIND/DO something on the web, or just chat. ` +
+    `Reply ONLY with minified JSON: {"action":"navigate"|"answer","url":"","say":""}. Rules: ` +
+    `shopping/products -> Amazon UK search https://www.amazon.co.uk/s?k=QUERY ; ` +
+    `videos -> https://www.youtube.com/results?search_query=QUERY ; ` +
+    `a named site -> that site's search or homepage ; ` +
+    `general lookups -> https://www.google.com/search?q=QUERY . ` +
+    `URL-encode the query. "say" = ONE short in-character spoken line under 22 words about what you're doing. ` +
+    `If it is just conversation, use action="answer" with url="".`;
+  try {
+    const r = await fetchT(`${GEMINI_BASE}/${cfg.geminiModel}:generateContent?key=${encodeURIComponent(cfg.geminiKey)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: sys }] },
+        contents: [{ role: "user", parts: [{ text: message }] }],
+        generationConfig: { temperature: 0.4, maxOutputTokens: 220, responseMimeType: "application/json" }
+      })
+    }, 9000);
+    const j = await r.json();
+    if (!r.ok) return { action: "answer" };
+    let t = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text).join("").trim().replace(/^```json/i, "").replace(/```$/, "").trim();
+    const o = JSON.parse(t);
+    if (o.action === "navigate" && /^https?:\/\//.test(o.url || "")) return { action: "navigate", url: o.url, say: o.say || "On it!" };
+    return { action: "answer", say: o.say || "" };
+  } catch (e) { return { action: "answer" }; }
+}
+
 // ---- message router ---------------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
@@ -156,6 +195,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "SPEAK": sendResponse(await slngSpeak(msg)); break;
         case "RESEARCH": sendResponse(await tavilyResearch(msg)); break;
         case "OPEN_GAME": sendResponse(await openGame()); break;
+        case "ACT": sendResponse(await routeIntent(msg)); break;
+        case "OPEN_URL": sendResponse(await openUrl(msg)); break;
         case "GET_POWERS": { const c = await getCfg(); sendResponse({ gemini: !!c.geminiKey, slng: !!c.slngKey, tavily: !!c.tavilyKey, mubit: !!c.mubitKey }); break; }
         default: sendResponse({ error: "unknown_message" });
       }

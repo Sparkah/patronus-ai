@@ -79,7 +79,7 @@
         <span class="chip" id="cbored">🎮 I'm bored</span>
         <span class="chip" id="cmute">🔊</span>
       </div>
-      <div class="ask"><input id="inp" placeholder="say something..."><button class="go" id="go">↑</button></div>
+      <div class="ask"><input id="inp" placeholder="find or do anything..."><button class="go" id="go">↑</button></div>
       <div class="out" id="out"></div>
     </div>`;
   (document.documentElement || document.body).appendChild(host);
@@ -193,7 +193,7 @@
   root.querySelectorAll(".chip[data-m]").forEach(ch => ch.addEventListener("click", () => {
     mode = ch.dataset.m;
     root.querySelectorAll(".chip[data-m]").forEach(x => x.classList.toggle("on", x === ch));
-    inp.placeholder = mode === "page" ? "ask about this page..." : mode === "web" ? "research the whole web..." : "say something...";
+    inp.placeholder = mode === "page" ? "ask about this page..." : mode === "web" ? "research the whole web..." : "find or do anything...";
     inp.focus();
   }));
   $("cbored").addEventListener("click", async () => { say(pick(["let's PLAY!", "screen break, kiddo!", "you've earned a game."]), {}); await send({ type: "OPEN_GAME" }); });
@@ -223,10 +223,19 @@
       out.innerHTML = `<div class="ans">${esc(r.text)}</div>` + minimaTag(r);
       say(r.text);
     } else {
-      const r = await send({ type: "CHAT", soul, message: q, context: document.title });
-      if (r.error && !r.text) return fail(r.error);
-      out.innerHTML = `<div class="ans">${esc(r.text)}</div>` + minimaTag(r);
-      say(r.text);
+      // Talk = agentic: actually DO it (find/open/navigate), else fall back to chat
+      const route = await send({ type: "ACT", soul, message: q, name: cur().name });
+      if (route && route.action === "navigate" && route.url) {
+        out.innerHTML = `<div class="ans">${esc(route.say || "On it!")}</div>` +
+          `<a class="lk" href="${route.url}" target="_blank" rel="noopener">${esc(route.url)} ↗</a>`;
+        say(route.say || "On it, sweetie!");
+        await send({ type: "OPEN_URL", url: route.url });
+      } else {
+        const r = await send({ type: "CHAT", soul, message: q, context: document.title });
+        if (r.error && !r.text) return fail(r.error);
+        out.innerHTML = `<div class="ans">${esc(r.text)}</div>` + minimaTag(r);
+        say(r.text);
+      }
     }
   }
   async function summarizeAloud(soul, material) {
