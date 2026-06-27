@@ -12,7 +12,7 @@
     cat:      { name: "Mochi",       emoji: "🐱", accent: "#ff9bb3", voice: "aura-2-thalia-en" },
     dog:      { name: "Biscuit",     emoji: "🐶", accent: "#ffce7a", voice: "aura-2-orion-en" },
     pupa:     { name: "Pupa",        emoji: "🐛", accent: "#9be08a", voice: "aura-2-luna-en" },
-    wizard:   { name: "The Wizard",  emoji: "🧙", accent: "#9b8cff", voice: "aura-2-orion-en" }
+    wizard:   { name: "Harry",       emoji: "🧙", accent: "#9b8cff", voice: "aura-2-orion-en" }
   };
   const DEFAULT_CHAR = "grandma";
   const GREETING = {
@@ -71,6 +71,12 @@
       .ask button{border:none;border-radius:10px;width:38px;cursor:pointer;font-size:15px}
       .ask .mic{background:#eef1f6;color:#3a4256}.ask .mic.on{background:#ffe0e0;color:#e0564f}
       .ask .go{background:var(--ac);color:#fff}
+      .gov{position:fixed;inset:0;z-index:7;pointer-events:auto;display:flex;align-items:center;justify-content:center}
+      .govbg{position:absolute;inset:0;background:rgba(10,12,20,.55)}
+      .govbox{position:relative;width:min(440px,92vw);height:min(780px,86vh);background:#0e141d;border-radius:16px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5);display:flex;flex-direction:column}
+      .govbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#161d28;color:#fff;font:700 12px -apple-system,system-ui,sans-serif}
+      .govx{cursor:pointer;font-weight:800;font-size:14px}
+      .govbox iframe{flex:1;width:100%;border:0;background:#000}
     </style>
     <div class="pet" id="pet"><video id="petvid" muted loop autoplay playsinline></video><img id="petimg" alt="" draggable="false"><span id="emoji">👵</span></div>
     <div class="bubble" id="bubble"></div>
@@ -118,7 +124,8 @@
     }).join("");
     thread.scrollTop = thread.scrollHeight;
   }
-  function pushMsg(role, text, extra) { history.push(Object.assign({ role, text }, extra || {})); if (history.length > 40) history = history.slice(-40); renderThread(); chrome.storage.local.set({ history }); }
+  function pushMsg(role, text, extra) { history.push(Object.assign({ role, text }, extra || {})); if (history.length > 40) history = history.slice(-40); renderThread(); chrome.storage.local.set({ ["chat_" + charId]: history }); }
+  function loadHistory() { chrome.storage.local.get(["chat_" + charId], d => { history = Array.isArray(d["chat_" + charId]) ? d["chat_" + charId] : []; renderThread(); }); }
   function recentContext() { return history.slice(-8).map(m => ({ role: m.role === "you" ? "user" : "model", text: m.text })); }
 
   async function getSoul() {
@@ -176,7 +183,9 @@
         const links = (r && r.results || []).slice(0, 5).map(x => ({ url: x.url || "#", label: x.title || x.url }));
         botReply(route.say || "Here's what I remembered:", links.length ? { links } : { tag: "(connect Superlinked to recall saved pages)" });
       } else if (act === "play_game") {
-        botReply(route.say || "let's play!"); confetti(); await send({ type: "OPEN_GAME" });
+        botReply(route.say || "let's play - right here!"); confetti();
+        const g = await send({ type: "GAME_URL", query: route.query || q });
+        showGameOverlay((g && g.url) || "https://game-factory.tech");
       } else if (act === "perform") {
         botReply(route.say || "wheee! watch this!"); flyAround();
       } else if (act === "page_qa") {
@@ -267,17 +276,128 @@
   pet.addEventListener("pointermove", e => { if (!dragging) return; const dx = e.clientX - sx, dy = e.clientY - sy; if (Math.abs(dx) + Math.abs(dy) > 5) dragMoved = true; pet.style.right = "auto"; pet.style.bottom = "auto"; pet.style.left = (ox + dx) + "px"; pet.style.top = (oy + dy) + "px"; });
   pet.addEventListener("pointerup", () => { dragging = false; resetIdle(); });
 
+  // ---- visible site search: the character walks to the search bar and types -----
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const visEl = e => e && e.offsetParent !== null && e.getClientRects().length;
+  function hostMatch(h) { try { const base = String(h || "").replace(/^www\./, "").split(".")[0]; return base && location.hostname.includes(base); } catch (e) { return false; } }
+
+  function checkPending() {
+    chrome.storage.local.get(["pendingSearch", "pendingSuggest"], d => {
+      const now = Date.now();
+      const ps = d.pendingSearch;
+      if (ps && now - (ps.ts || 0) < 60000 && hostMatch(ps.host)) {
+        chrome.storage.local.remove("pendingSearch");
+        setTimeout(() => runVisibleSearch(ps.query), 1600);
+        return;
+      }
+      const sg = d.pendingSuggest;
+      if (sg && now - (sg.ts || 0) < 90000 && hostMatch(sg.host) && /[?&/](q|k|query|search|searchterm)=|\/search|\/s\b|results/i.test(location.href)) {
+        chrome.storage.local.remove("pendingSuggest");
+        setTimeout(() => suggestFromResults(sg.query), 2600);
+      }
+    });
+  }
+  function dismissCookies() {
+    return new Promise(res => {
+      try {
+        const btns = [...document.querySelectorAll('button,[role="button"],a')];
+        const b = btns.find(x => /reject all|only necessary|necessary only|essential only/i.test(x.textContent || "")) ||
+          btns.find(x => /accept all|accept cookies|i agree|got it|allow all/i.test(x.textContent || ""));
+        if (b) b.click();
+      } catch (e) {}
+      setTimeout(res, 800);
+    });
+  }
+  function findSearchInput() {
+    return new Promise(res => {
+      let tries = 0;
+      const sel = 'input[type="search"],input[name="q"],input[name*="search" i],input[name*="term" i],input[placeholder*="search" i],input[aria-label*="search" i],input[id*="search" i]';
+      (function tick() {
+        let inp = [...document.querySelectorAll(sel)].find(visEl);
+        if (!inp) {
+          const togs = [...document.querySelectorAll('button,[role="button"],a')].filter(b => /search/i.test((b.getAttribute("aria-label") || "") + " " + (b.className || "") + " " + (b.id || "") + " " + (b.getAttribute("data-auto-id") || "")));
+          const t = togs.find(visEl); if (t) { try { t.click(); } catch (e) {} }
+          inp = [...document.querySelectorAll(sel)].find(visEl);
+        }
+        if (inp && visEl(inp)) return res(inp);
+        if (++tries > 16) return res(null);
+        setTimeout(tick, 500);
+      })();
+    });
+  }
+  function movePetTo(el) {
+    return new Promise(res => {
+      const r = el.getBoundingClientRect();
+      pet.style.transition = "left .6s cubic-bezier(.34,1.3,.5,1),top .6s cubic-bezier(.34,1.3,.5,1)";
+      pet.style.right = "auto"; pet.style.bottom = "auto";
+      pet.style.left = Math.max(8, Math.min(window.innerWidth - 92, r.left + r.width / 2 - 42)) + "px";
+      pet.style.top = Math.max(8, r.bottom + 8) + "px";
+      setTimeout(() => { pet.style.transition = ""; res(); }, 720);
+    });
+  }
+  async function typeVisibly(inp, q) {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    inp.focus();
+    for (let i = 1; i <= q.length; i++) {
+      setter.call(inp, q.slice(0, i));
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      try { inp.dispatchEvent(new InputEvent("input", { bubbles: true, data: q[i - 1], inputType: "insertText" })); } catch (e) {}
+      await sleep(75);
+    }
+    inp.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  function submitSearch(inp) {
+    const form = inp.closest("form");
+    if (form) { try { form.requestSubmit ? form.requestSubmit() : form.submit(); return; } catch (e) {} }
+    const sb = [...document.querySelectorAll('button[type="submit"],button[aria-label*="search" i],[role="button"][aria-label*="search" i]')].find(visEl);
+    if (sb) { sb.click(); return; }
+    ["keydown", "keypress", "keyup"].forEach(t => inp.dispatchEvent(new KeyboardEvent(t, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true })));
+    const before = location.href, val = inp.value;
+    setTimeout(() => { if (location.href === before) location.href = location.origin + "/search?q=" + encodeURIComponent(val); }, 2600); // URL fallback
+  }
+  async function runVisibleSearch(query) {
+    togglePanel(true);
+    botReply(`let me find the search bar and look for "${query}"...`);
+    await dismissCookies();
+    const inp = await findSearchInput();
+    if (!inp) { botReply("hmm, i couldn't find this site's search box."); return; }
+    await movePetTo(inp);
+    spark(inp.getBoundingClientRect().left + 20, inp.getBoundingClientRect().top - 6, "✨");
+    await typeVisibly(inp, query);
+    await sleep(450);
+    chrome.storage.local.set({ pendingSuggest: { host: location.hostname, query, ts: Date.now() } });
+    submitSearch(inp);
+  }
+  async function suggestFromResults(query) {
+    togglePanel(true);
+    const soul = await getSoul();
+    const text = document.body ? document.body.innerText.slice(0, 12000) : "";
+    const r = await send({ type: "PAGE_QA", soul, question: `I searched this site for "${query}". From these results, recommend 2-3 specific items that fit and say why, briefly.`, text });
+    if (r && (r.text || !r.error)) botReply(r.text || "here's what I found!", r.minima ? { tag: `🧠 ${r.minima}` } : {});
+  }
+
+  // play an embedded game from the factory as an in-browser overlay
+  function showGameOverlay(url) {
+    let ov = root.getElementById("gov"); if (ov) ov.remove();
+    ov = document.createElement("div"); ov.id = "gov"; ov.className = "gov";
+    ov.innerHTML = `<div class="govbg"></div><div class="govbox"><div class="govbar"><span>🎮 Patronus Arcade</span><span class="govx" id="govx">✕</span></div><iframe id="goviframe" allow="autoplay; fullscreen; gamepad; microphone" referrerpolicy="no-referrer"></iframe></div>`;
+    root.appendChild(ov);
+    root.getElementById("govx").addEventListener("click", () => ov.remove());
+    ov.querySelector(".govbg").addEventListener("click", () => ov.remove());
+    root.getElementById("goviframe").src = url;
+  }
+
   // boot
-  chrome.storage.local.get(["activeChar", "muted", "history"], d => {
+  chrome.storage.local.get(["activeChar", "muted"], d => {
     if (d.activeChar && CHARS[d.activeChar]) charId = d.activeChar;
     muted = !!d.muted; $("pmute").textContent = muted ? "🔇" : "🔊";
-    history = Array.isArray(d.history) ? d.history : [];
-    applyChar(); renderThread();
+    applyChar(); loadHistory();                         // per-character chat
     setTimeout(() => say(GREETING[charId] || "hi!"), 1200);
     resetIdle(); scheduleWander();
+    checkPending();                                     // visible site search / suggest
   });
   chrome.storage.onChanged.addListener(ch => {
-    if (ch.activeChar && CHARS[ch.activeChar.newValue]) { charId = ch.activeChar.newValue; applyChar(); say(GREETING[charId] || "hi!"); }
+    if (ch.activeChar && CHARS[ch.activeChar.newValue]) { charId = ch.activeChar.newValue; applyChar(); loadHistory(); say(GREETING[charId] || "hi!"); }
     if (ch.muted) { muted = !!ch.muted.newValue; $("pmute").textContent = muted ? "🔇" : "🔊"; }
   });
 })();

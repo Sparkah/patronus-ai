@@ -158,55 +158,16 @@ async function openUrl({ url }) {
   return { opened: url };
 }
 
-// Open a site, then drive ITS OWN search box (explore-then-search) - works on
-// stores whose URL search params we don't know (Harrods, Zara, ...).
+// Hand the search to the OPENED TAB's content script, which performs it VISIBLY
+// (the character walks to the search bar, types, submits, then suggests).
 async function siteSearch({ site, query }) {
   let s = String(site || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   if (!s) return { error: "bad_site" };
   if (!s.includes(".")) s += ".com";   // "harrods" -> "harrods.com"
   const url = "https://" + s;
-  const tab = await chrome.tabs.create({ url });
-  await new Promise(res => {
-    const to = setTimeout(() => { try { chrome.tabs.onUpdated.removeListener(l); } catch (e) {} res(); }, 10000);
-    function l(id, info) { if (id === tab.id && info.status === "complete") { clearTimeout(to); chrome.tabs.onUpdated.removeListener(l); res(); } }
-    chrome.tabs.onUpdated.addListener(l);
-  });
-  try {
-    const r = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, args: [query],
-      func: async (q) => {
-        const sleep = ms => new Promise(r => setTimeout(r, ms));
-        const vis = e => e && e.offsetParent !== null && e.getClientRects().length;
-        const findInput = () => {
-          const els = [...document.querySelectorAll('input[type="search"], input[name="q"], input[name*="search" i], input[name*="term" i], input[placeholder*="search" i], input[aria-label*="search" i], input[id*="search" i]')];
-          return els.find(vis) || null;
-        };
-        let inp = findInput();
-        for (let i = 0; i < 3 && !inp; i++) {                    // reveal a hidden search box (click its VISIBLE toggle)
-          const togs = [...document.querySelectorAll('button,[role="button"],a')].filter(b => /search/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.className || '') + ' ' + (b.id || '') + ' ' + (b.getAttribute('data-test') || '')));
-          const tog = togs.find(vis) || togs[0];
-          if (tog) { try { tog.click(); } catch (e) {} await sleep(1100); }
-          inp = findInput();
-        }
-        if (!inp) return { ok: false };
-        inp.focus();
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        setter.call(inp, q);
-        inp.dispatchEvent(new Event('input', { bubbles: true }));
-        inp.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(350);
-        const form = inp.closest('form');
-        if (form) { form.requestSubmit ? form.requestSubmit() : form.submit(); return { ok: true, via: 'form' }; }
-        // submit via a nearby submit/search button, else Enter
-        const sb = [...document.querySelectorAll('button[type="submit"], button[aria-label*="search" i], [role="button"][aria-label*="search" i]')].find(vis);
-        if (sb) { sb.click(); return { ok: true, via: 'btn' }; }
-        ['keydown', 'keypress', 'keyup'].forEach(t =>
-          inp.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })));
-        return { ok: true, via: 'enter' };
-      }
-    });
-    return { opened: url, searched: query, found: !!(r && r[0] && r[0].result && r[0].result.ok) };
-  } catch (e) { return { opened: url, searched: query, found: false }; }
+  await chrome.storage.local.set({ pendingSearch: { host: s, query, ts: Date.now() } });
+  await chrome.tabs.create({ url, active: true });
+  return { opened: url, searched: query };
 }
 
 // ---- n8n: fire a workflow via its webhook (automations / reminders) ----------
@@ -303,6 +264,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "SPEAK": sendResponse(await slngSpeak(msg)); break;
         case "RESEARCH": sendResponse(await tavilyResearch(msg)); break;
         case "OPEN_GAME": sendResponse(await openGame()); break;
+        case "GAME_URL": { const c = await getCfg(); let url = c.games[Math.floor(Math.random() * c.games.length)]; if (msg.query) { const qq = String(msg.query).toLowerCase(); const m = c.games.find(u => u.toLowerCase().includes(qq.replace(/\s+/g, "-")) || u.toLowerCase().includes(qq.replace(/[^a-z0-9]/g, ""))); if (m) url = m; } sendResponse({ url }); break; }
         case "ACT": sendResponse(await routeIntent(msg)); break;
         case "OPEN_URL": sendResponse(await openUrl(msg)); break;
         case "SITE_SEARCH": sendResponse(await siteSearch(msg)); break;

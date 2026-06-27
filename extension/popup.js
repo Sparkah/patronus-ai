@@ -7,7 +7,7 @@ const REAL = [
   { id: "cat",      e: "🐱", n: "Mochi" },
   { id: "dog",      e: "🐶", n: "Biscuit" },
   { id: "pupa",     e: "🐛", n: "Pupa" },
-  { id: "wizard",   e: "🧙", n: "The Wizard" }
+  { id: "wizard",   e: "🧙", n: "Harry" }
 ];
 const TEASER = { e: "✨", n: "soon" };
 const $ = id => document.getElementById(id);
