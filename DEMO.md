@@ -5,6 +5,7 @@ real voice, and actually does things. Every beat lights up a different sponsor.
 
 ## Setup (off camera)
 - Load `extension/` unpacked in Chrome (keys are baked into `config.local.js`).
+- In the popup, hit **🧹 Reset for demo** (clears all chats + the sponsor log) so it's fresh.
 - Have a normal site open (any), and the popup pinned.
 
 ## The run
@@ -20,7 +21,11 @@ real voice, and actually does things. Every beat lights up a different sponsor.
 5. **Go wild.** *"do a dance"* / *"fly around"* -> she zooms the screen with confetti. *(wow factor)*
 6. **Play your game.** *"play the brainrot game"* -> `brainrot_2048` opens in an
    in-browser overlay, playable inline. *(ties in the game factory)*
-7. **Close.** "One guardian: Gemini thinks, SLNG speaks, Tavily searches, Mubit keeps
+7. **Show the receipts (the proof beat).** Open the popup -> **📊 Sponsor log**. It
+   groups every partner call by request: for "find flip flops" you see SLNG + Mubit +
+   Gemini, each expandable to the *real* request and response. This is where each
+   sponsor sees their tech genuinely load-bearing.
+8. **Close.** "One guardian: Gemini thinks, SLNG speaks, Tavily searches, Mubit keeps
    it cheap - and a new soul every day so you come back."
 
 ## Sponsor map (each judge sees their tech)
