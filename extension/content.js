@@ -200,6 +200,7 @@
   $("go").addEventListener("click", submit);
   inp.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
   const pick = a => a[Math.floor(Math.random() * a.length)];
+  const minimaTag = r => r && r.minima ? `<div class="muted" style="margin-top:6px">🧠 Mubit/Minima picked ${esc(r.minima)}${r.est ? " · ~$" + Number(r.est).toFixed(4) + "/call" : ""}</div>` : "";
 
   async function submit() {
     const q = inp.value.trim(); if (!q) return;
@@ -217,12 +218,12 @@
       const text = document.body ? document.body.innerText.slice(0, 14000) : "";
       const r = await send({ type: "PAGE_QA", soul, question: q, text });
       if (r.error && !r.text) return fail(r.error);
-      out.innerHTML = `<div class="ans">${esc(r.text)}</div>`;
+      out.innerHTML = `<div class="ans">${esc(r.text)}</div>` + minimaTag(r);
       say(r.text);
     } else {
       const r = await send({ type: "CHAT", soul, message: q, context: document.title });
       if (r.error && !r.text) return fail(r.error);
-      out.innerHTML = `<div class="ans">${esc(r.text)}</div>`;
+      out.innerHTML = `<div class="ans">${esc(r.text)}</div>` + minimaTag(r);
       say(r.text);
     }
   }

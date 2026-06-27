@@ -35,6 +35,11 @@
   .keys a{font-size:10.5px;color:var(--ac);text-decoration:none}
   .save{border:none;border-radius:9px;background:var(--ac);color:#fff;font-weight:700;padding:9px;cursor:pointer;font-size:12.5px}
   .saved{color:#1f9d57;font-size:11px;text-align:center;height:14px}
+  .powers{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 12px}
+  .pw{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#3a4256;
+    background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 10px}
+  .pw .dot{width:7px;height:7px;border-radius:50%;background:#1f9d57}
+  .pw.off{color:#aeb6c4}.pw.off .dot{background:#cdd4df}
   footer{text-align:center;color:#aeb6c4;font-size:10px;padding:6px 0 12px}
 </style>
 </head>
@@ -51,19 +56,8 @@
 
   <div id="unlockBox"></div>
 
-  <details>
-    <summary>🔑 Connect powers (API keys)</summary>
-    <div class="keys">
-      <div class="row"><label>Gemini (brain)</label><a href="https://goo.gle/hackathon-account" target="_blank">get key ↗</a></div>
-      <input id="k_gem" type="password" placeholder="GEMINI_API_KEY">
-      <div class="row"><label>SLNG (voice)</label><a href="https://app.slng.ai" target="_blank">get key ↗</a></div>
-      <input id="k_slng" type="password" placeholder="SLNG_API_KEY">
-      <div class="row"><label>Tavily (web)</label><a href="https://tavily.com" target="_blank">get key ↗</a></div>
-      <input id="k_tav" type="password" placeholder="TAVILY_API_KEY">
-      <button class="save" id="save">Save keys</button>
-      <div class="saved" id="saved"></div>
-    </div>
-  </details>
+  <div class="sec">Powers</div>
+  <div class="powers" id="powers"></div>
 
   <footer>Open a normal website to meet your patronus.</footer>
   <script src="popup.js"></script>

@@ -3,6 +3,8 @@
 .env
 *.key
 secrets/
+# Baked-in local API keys for the extension (gitignored). Use config.local.example.js as the template.
+extension/config.local.js
 
 # Python
 __pycache__/
