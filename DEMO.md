@@ -18,7 +18,9 @@ real voice, and does real tasks on the open web. Every beat lights up a sponsor.
    cheapest with links. Reply tag: site search - Superlinked semantic rank - Gemini -
    Mubit - SLNG.  (four sponsors, one action). Frame: "hands-free, never leave my page."
 3. Research (15s): "research the best flip-flop brands" -> grounded answer + sources. (Tavily)
-4. Fun (15s): "do a dance" -> flies around with confetti. Switch to Tung Tung (new voice). (creativity)
+4. Fun (20s): switch to Six Seven, say "spin the spinner" -> a real fidget spinner
+   pops up that you flick/drag (physics spin-down + live RPM counter + confetti).
+   Then "do a dance" -> flies around. (creativity; the judge's fidget-spinner idea)
 5. Game (15s): "play the brainrot game" -> brainrot_2048 in the in-browser overlay. (your factory)
 6. The receipts (20s, closer): popup -> 📊 Sponsor log (pony page). Open the
    "find flip flops" group -> Superlinked + Mubit + Gemini + SLNG, each with the real

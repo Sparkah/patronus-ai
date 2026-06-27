@@ -79,6 +79,15 @@
       .govbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#161d28;color:#fff;font:700 12px -apple-system,system-ui,sans-serif}
       .govx{cursor:pointer;font-weight:800;font-size:14px}
       .govbox iframe{flex:1;width:100%;border:0;background:#000}
+      .spin{position:fixed;inset:0;z-index:8;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+      .spinbg{position:absolute;inset:0;background:radial-gradient(circle at 50% 44%,rgba(22,30,48,.66),rgba(8,10,16,.88))}
+      .spinwrap{position:relative;width:min(66vw,330px);height:min(66vw,330px);touch-action:none;cursor:grab;filter:drop-shadow(0 18px 42px rgba(0,0,0,.55))}
+      .spinwrap:active{cursor:grabbing}
+      .spinwrap svg{width:100%;height:100%;display:block;will-change:transform;transform-origin:50% 50%}
+      .spincap{position:relative;color:#fff;font:800 19px -apple-system,system-ui,sans-serif;text-shadow:0 2px 10px rgba(0,0,0,.6);text-align:center}
+      .spinrpm{position:relative;color:#dcebfb;font:800 14px ui-monospace,Menlo,monospace;opacity:.95;letter-spacing:.04em}
+      .spinhint{position:relative;color:#aebfd2;font:600 12.5px -apple-system,system-ui,sans-serif;opacity:.85}
+      .spinx{position:absolute;top:16px;right:18px;color:#fff;font:800 16px sans-serif;cursor:pointer;background:rgba(0,0,0,.4);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center}
     </style>
     <div class="pet" id="pet"><video id="petvid" muted loop autoplay playsinline></video><img id="petimg" alt="" draggable="false"><span id="emoji">👵</span></div>
     <div class="bubble" id="bubble"></div>
@@ -183,6 +192,11 @@
     const q = inp.value.trim(); if (!q) return;
     inp.value = ""; resetIdle(); lastVia = q;
     pushMsg("you", q);
+    // hardcoded: fidget spinner (Six Seven's bit). reliable, no router round-trip.
+    if (/\b(spin(ner)?|fidget)\b/i.test(q)) {
+      botReply(charId === "sixseven" ? "six seven!! 🌀 watch this spinnnn!!" : "okok - flick it and watch!");
+      showSpinner(); return;
+    }
     const soul = await getSoul(); const ctx = recentContext();
     const route = await send({ type: "ACT", soul, message: q, name: cur().name, history: ctx, via: q });
     const act = route && route.action;
@@ -440,6 +454,50 @@
     root.getElementById("govx").addEventListener("click", () => ov.remove());
     ov.querySelector(".govbg").addEventListener("click", () => ov.remove());
     root.getElementById("goviframe").src = url;
+  }
+
+  // ---- fidget spinner: Six Seven's signature. flick it, watch it spin down -----
+  function spinnerSVG(color) {
+    const arms = [0, 120, 240].map(a => { const r = a * Math.PI / 180, cx = 100 + 58 * Math.cos(r), cy = 100 + 58 * Math.sin(r); return `<line x1="100" y1="100" x2="${cx.toFixed(1)}" y2="${cy.toFixed(1)}" stroke="${color}" stroke-width="46" stroke-linecap="round"/>`; }).join("");
+    const lobes = [0, 120, 240].map(a => { const r = a * Math.PI / 180, cx = 100 + 58 * Math.cos(r), cy = 100 + 58 * Math.sin(r); return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="33" fill="${color}"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="17" fill="#0e141d"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="9" fill="#fff" opacity=".85"/>`; }).join("");
+    return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><g>${arms}${lobes}<circle cx="100" cy="100" r="40" fill="${color}"/><circle cx="100" cy="100" r="23" fill="#0e141d"/><circle cx="100" cy="100" r="13" fill="#fff" opacity=".9"/><circle cx="100" cy="100" r="6" fill="${color}"/></g></svg>`;
+  }
+  let spinRAF = 0;
+  function closeSpinner() { cancelAnimationFrame(spinRAF); spinRAF = 0; const o = root.getElementById("spin"); if (o) o.remove(); }
+  function showSpinner() {
+    closeSpinner();
+    const c = cur();
+    const sixseven = charId === "sixseven";
+    const ov = document.createElement("div"); ov.id = "spin"; ov.className = "spin";
+    ov.innerHTML = `<div class="spinbg"></div><span class="spinx" id="spinx">✕</span>
+      <div class="spincap">${esc(sixseven ? "six seven!! 🌀" : c.name + " says: spinnnn!")}</div>
+      <div class="spinwrap" id="spinwrap" title="flick to spin">${spinnerSVG(c.accent)}</div>
+      <div class="spinrpm" id="spinrpm">0 RPM</div>
+      <div class="spinhint">flick or drag the spinner</div>`;
+    root.appendChild(ov);
+    const wrap = root.getElementById("spinwrap"), g = wrap.querySelector("svg"), rpmEl = root.getElementById("spinrpm");
+    root.getElementById("spinx").addEventListener("click", closeSpinner);
+    ov.querySelector(".spinbg").addEventListener("click", closeSpinner);
+
+    let angle = 0, vel = 26, dragging = false, lastA = 0;   // open with a big flick
+    const ptrAngle = e => { const r = wrap.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
+    wrap.addEventListener("pointerdown", e => { dragging = true; vel = 0; lastA = ptrAngle(e); try { wrap.setPointerCapture(e.pointerId); } catch (x) {} });
+    wrap.addEventListener("pointermove", e => { if (!dragging) return; const a = ptrAngle(e); let d = a - lastA; if (d > 180) d -= 360; if (d < -180) d += 360; angle += d; vel = d; lastA = a; });
+    const release = () => { if (!dragging) return; dragging = false; if (Math.abs(vel) < 3) vel = 20 + Math.random() * 10; confetti(window.innerWidth / 2, window.innerHeight / 2); };
+    wrap.addEventListener("pointerup", release);
+    wrap.addEventListener("pointercancel", release);
+
+    let lastT = 0;
+    (function frame(t) {
+      if (!alive()) return closeSpinner();
+      if (!root.getElementById("spin")) return;
+      const dt = lastT ? Math.min(48, t - lastT) : 16; lastT = t;
+      if (!dragging) { angle += vel * dt / 16; vel *= 0.986; if (Math.abs(vel) < 0.03) vel = 0; }
+      g.style.transform = `rotate(${angle}deg)`;
+      rpmEl.textContent = Math.round(Math.abs(vel) * 10.4) + " RPM";
+      spinRAF = requestAnimationFrame(frame);
+    })(0);
+    confetti(window.innerWidth / 2, window.innerHeight / 2);
   }
 
   // boot
