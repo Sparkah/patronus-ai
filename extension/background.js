@@ -152,34 +152,80 @@ async function openUrl({ url }) {
   return { opened: url };
 }
 
-// ---- agentic router: turn "find me flip flops on amazon" into a real action ---
+// Open a site, then drive ITS OWN search box (explore-then-search) - works on
+// stores whose URL search params we don't know (Harrods, Zara, ...).
+async function siteSearch({ site, query }) {
+  const url = /^https?:\/\//.test(site) ? site : "https://" + String(site || "").replace(/^\/+/, "");
+  if (!/^https?:\/\/[^/]+\./.test(url)) return { error: "bad_site" };
+  const tab = await chrome.tabs.create({ url });
+  await new Promise(res => {
+    const to = setTimeout(() => { try { chrome.tabs.onUpdated.removeListener(l); } catch (e) {} res(); }, 10000);
+    function l(id, info) { if (id === tab.id && info.status === "complete") { clearTimeout(to); chrome.tabs.onUpdated.removeListener(l); res(); } }
+    chrome.tabs.onUpdated.addListener(l);
+  });
+  try {
+    const r = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, args: [query],
+      func: async (q) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const find = () => {
+          const els = [...document.querySelectorAll('input[type="search"], input[name="q"], input[name*="search" i], input[name*="term" i], input[placeholder*="search" i], input[aria-label*="search" i], input[id*="search" i]')];
+          return els.find(e => e.offsetParent !== null) || els[0];
+        };
+        let inp = find();
+        if (!inp || inp.offsetParent === null) {                 // search box hidden - reveal it
+          const tog = [...document.querySelectorAll('button,[role="button"],a')].find(b =>
+            /search/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.className || '') + ' ' + (b.id || '')));
+          if (tog) { tog.click(); await sleep(1000); inp = find(); }
+        }
+        if (!inp) return { ok: false };
+        inp.focus();
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(inp, q);
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(250);
+        const form = inp.closest('form');
+        if (form) { form.requestSubmit ? form.requestSubmit() : form.submit(); return { ok: true, via: 'form' }; }
+        ['keydown', 'keypress', 'keyup'].forEach(t =>
+          inp.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })));
+        return { ok: true, via: 'enter' };
+      }
+    });
+    return { opened: url, searched: query, found: !!(r && r[0] && r[0].result && r[0].result.ok) };
+  } catch (e) { return { opened: url, searched: query, found: false }; }
+}
+
+// ---- agentic router: turn "find flip flops on harrods" into a real action ----
 async function routeIntent({ soul, message, name }) {
   const cfg = await getCfg();
   if (!cfg.geminiKey) return { action: "answer" };
   const sys =
     `You are the intent router for a browser guardian character${name ? " named " + name : ""}. ` +
-    `Personality (for the spoken line only):\n${(soul || "").slice(0, 1200)}\n\n` +
-    `Decide if the user wants you to GO somewhere or FIND/DO something on the web, or just chat. ` +
-    `Reply ONLY with minified JSON: {"action":"navigate"|"answer","url":"","say":""}. Rules: ` +
-    `shopping/products -> Amazon UK search https://www.amazon.co.uk/s?k=QUERY ; ` +
-    `videos -> https://www.youtube.com/results?search_query=QUERY ; ` +
-    `a named site -> that site's search or homepage ; ` +
-    `general lookups -> https://www.google.com/search?q=QUERY . ` +
-    `URL-encode the query. "say" = ONE short in-character spoken line under 22 words about what you're doing. ` +
-    `If it is just conversation, use action="answer" with url="".`;
+    `Personality (for the spoken line only):\n${(soul || "").slice(0, 1000)}\n\n` +
+    `Decide what the user wants. Reply ONLY with minified JSON: ` +
+    `{"action":"site_search"|"navigate"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
+    `- A NAMED online store/brand (Harrods, Zara, ASOS, Nike, eBay, etc.): action="site_search", ` +
+    `site=its domain (e.g. "harrods.com"), query=the search terms. Do NOT guess its search URL. ` +
+    `- Amazon: action="navigate", url="https://www.amazon.co.uk/s?k=QUERY" (url-encoded). ` +
+    `- Videos: action="navigate", url="https://www.youtube.com/results?search_query=QUERY". ` +
+    `- General facts/lookups: action="navigate", url="https://www.google.com/search?q=QUERY". ` +
+    `- Just chatting: action="answer". ` +
+    `"say" = ONE short in-character spoken line under 22 words about what you're doing.`;
   try {
     const r = await fetchT(`${GEMINI_BASE}/${cfg.geminiModel}:generateContent?key=${encodeURIComponent(cfg.geminiKey)}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: sys }] },
         contents: [{ role: "user", parts: [{ text: message }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 220, responseMimeType: "application/json" }
+        generationConfig: { temperature: 0.3, maxOutputTokens: 240, responseMimeType: "application/json" }
       })
     }, 9000);
     const j = await r.json();
     if (!r.ok) return { action: "answer" };
     let t = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text).join("").trim().replace(/^```json/i, "").replace(/```$/, "").trim();
     const o = JSON.parse(t);
+    if (o.action === "site_search" && o.site && o.query) return { action: "site_search", site: o.site, query: o.query, say: o.say || "On it!" };
     if (o.action === "navigate" && /^https?:\/\//.test(o.url || "")) return { action: "navigate", url: o.url, say: o.say || "On it!" };
     return { action: "answer", say: o.say || "" };
   } catch (e) { return { action: "answer" }; }
@@ -197,6 +243,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "OPEN_GAME": sendResponse(await openGame()); break;
         case "ACT": sendResponse(await routeIntent(msg)); break;
         case "OPEN_URL": sendResponse(await openUrl(msg)); break;
+        case "SITE_SEARCH": sendResponse(await siteSearch(msg)); break;
         case "GET_POWERS": { const c = await getCfg(); sendResponse({ gemini: !!c.geminiKey, slng: !!c.slngKey, tavily: !!c.tavilyKey, mubit: !!c.mubitKey }); break; }
         default: sendResponse({ error: "unknown_message" });
       }

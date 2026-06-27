@@ -225,7 +225,12 @@
     } else {
       // Talk = agentic: actually DO it (find/open/navigate), else fall back to chat
       const route = await send({ type: "ACT", soul, message: q, name: cur().name });
-      if (route && route.action === "navigate" && route.url) {
+      if (route && route.action === "site_search" && route.site) {
+        out.innerHTML = `<div class="ans">${esc(route.say || "On it!")}</div>` +
+          `<div class="muted" style="margin-top:6px">exploring ${esc(route.site)}, searching "${esc(route.query)}"…</div>`;
+        say(route.say || "On it, sweetie!");
+        await send({ type: "SITE_SEARCH", site: route.site, query: route.query });
+      } else if (route && route.action === "navigate" && route.url) {
         out.innerHTML = `<div class="ans">${esc(route.say || "On it!")}</div>` +
           `<a class="lk" href="${route.url}" target="_blank" rel="noopener">${esc(route.url)} ↗</a>`;
         say(route.say || "On it, sweetie!");
