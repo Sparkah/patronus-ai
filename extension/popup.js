@@ -48,4 +48,12 @@ function loadPowers() {
   });
 }
 
+document.getElementById("logBtn").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("log.html") }));
+document.getElementById("resetBtn").addEventListener("click", () => {
+  chrome.storage.local.get(null, all => {
+    const keys = Object.keys(all).filter(k => k.startsWith("chat_") || k === "sponsorLog" || k === "pendingSearch" || k === "pendingSuggest");
+    chrome.storage.local.remove(keys, () => { const b = document.getElementById("resetBtn"); b.textContent = "✓ cleared"; setTimeout(() => b.textContent = "🧹 Reset for demo", 1500); });
+  });
+});
+
 load();

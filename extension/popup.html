@@ -42,6 +42,10 @@
     background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 10px}
   .pw .dot{width:7px;height:7px;border-radius:50%;background:#1f9d57}
   .pw.off{color:#aeb6c4}.pw.off .dot{background:#cdd4df}
+  .actions{display:flex;gap:8px;padding:6px 14px 10px}
+  .actions button{flex:1;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;color:#3a4256}
+  .actions button:hover{border-color:var(--ac);color:var(--ac)}
+  .actions .reset{color:#c0556a}
   footer{text-align:center;color:#aeb6c4;font-size:10px;padding:6px 0 12px}
 </style>
 </head>
@@ -60,6 +64,11 @@
 
   <div class="sec">Powers</div>
   <div class="powers" id="powers"></div>
+
+  <div class="actions">
+    <button id="logBtn">📊 Sponsor log</button>
+    <button id="resetBtn" class="reset">🧹 Reset for demo</button>
+  </div>
 
   <footer>Open a normal website to meet your patronus.</footer>
   <script src="popup.js"></script>

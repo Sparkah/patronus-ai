@@ -41,21 +41,34 @@ async function fetchT(url, opts, ms = 12000) {
   finally { clearTimeout(t); }
 }
 
+// ---- sponsor usage log (flight recorder): real request/response per call ------
+async function logEvent(e) {
+  try {
+    const d = await chrome.storage.local.get("sponsorLog");
+    const log = Array.isArray(d.sponsorLog) ? d.sponsorLog : [];
+    log.push(Object.assign({ ts: Date.now() }, e));
+    while (log.length > 150) log.shift();
+    await chrome.storage.local.set({ sponsorLog: log });
+  } catch (err) {}
+}
+
 // ---- Mubit / Minima: pick the cheapest capable model, then we run it ---------
-async function minimaPick(taskText, taskType) {
+async function minimaPick(taskText, taskType, via) {
   const cfg = await getCfg();
   if (!cfg.mubitKey) return null;
   try {
+    const body = { task: { task: (taskText || "").slice(0, 300), task_type: taskType || "other" }, cost_quality_tradeoff: 3 };
     const r = await fetchT(MINIMA_BASE + "/recommend", {
       method: "POST",
       headers: { "authorization": "Bearer " + cfg.mubitKey, "content-type": "application/json" },
-      body: JSON.stringify({ task: { task: (taskText || "").slice(0, 300), task_type: taskType || "other" }, cost_quality_tradeoff: 3 })
+      body: JSON.stringify(body)
     }, 6000);
     const j = await r.json();
     if (!r.ok) return null;
     // only pick models we can actually run with the Gemini key
     const runnable = m => m && m.provider === "google" && /^gemini-/.test(m.model_id || "");
     const m = runnable(j.recommended_model) ? j.recommended_model : (j.ranked || []).find(runnable);
+    logEvent({ sponsor: "Mubit", op: "recommend", via: via || taskText, request: body, response: { picked: m ? m.model_id : null, est_cost_usd: m ? m.est_cost_usd : null, recommendation_id: j.recommendation_id, ranked: (j.ranked || []).slice(0, 4).map(x => x.model_id) } });
     return { recommendationId: j.recommendation_id, modelId: m ? m.model_id : null, est: m ? m.est_cost_usd : (j.recommended_model && j.recommended_model.est_cost_usd) };
   } catch (e) { return null; }
 }
@@ -91,17 +104,18 @@ async function callGemini(model, key, sys, message, history) {
   return { ok: true, text, usage: { in: u.promptTokenCount || 0, out: u.candidatesTokenCount || 0 } };
 }
 
-async function geminiReply({ soul, message, context, taskType, history }) {
+async function geminiReply({ soul, message, context, taskType, history, via }) {
   const cfg = await getCfg();
   if (!cfg.geminiKey) return { error: "no_gemini_key", text: "(Add a Gemini key so I can think.)" };
   const sys = (soul || "You are a friendly browser companion.") + (context ? `\n\n## Current page context (may help)\n${context.slice(0, 8000)}` : "");
-  const pick = await minimaPick(message, taskType || "creative");
+  const pick = await minimaPick(message, taskType || "creative", via);
   let model = (pick && pick.modelId) || cfg.geminiModel;
   try {
     let res = await callGemini(model, cfg.geminiKey, sys, message, history);
     if (!res.ok && model !== cfg.geminiModel) { model = cfg.geminiModel; res = await callGemini(model, cfg.geminiKey, sys, message, history); } // fallback
-    if (!res.ok) return { error: "gemini_" + (res.status || "x"), text: res.errMsg || "Gemini hiccup." };
+    if (!res.ok) { logEvent({ sponsor: "Gemini", op: taskType || "chat", via: via || message, ok: false, request: { model, system: (sys || "").slice(0, 500), user: message }, response: { error: res.errMsg } }); return { error: "gemini_" + (res.status || "x"), text: res.errMsg || "Gemini hiccup." }; }
     if (pick && pick.recommendationId) minimaFeedback(pick.recommendationId, model, res.usage); // fire and forget
+    logEvent({ sponsor: "Gemini", op: taskType || "chat", via: via || message, request: { model, system: (sys || "").slice(0, 500), user: message }, response: { text: res.text }, meta: { model, in: res.usage.in, out: res.usage.out } });
     return { text: res.text, model, minima: pick ? model : null, est: pick ? pick.est : null };
   } catch (e) { return { error: "gemini_fetch", text: "(Couldn't reach Gemini.)" }; }
 }
@@ -112,7 +126,7 @@ function abToBase64(buf) {
   for (let i = 0; i < bytes.length; i += CHUNK) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
   return btoa(bin);
 }
-async function slngSpeak({ text, voice }) {
+async function slngSpeak({ text, voice, via }) {
   const cfg = await getCfg();
   if (cfg.muted) return { skipped: "muted" };
   if (!cfg.slngKey) return { error: "no_slng_key" };
@@ -123,24 +137,27 @@ async function slngSpeak({ text, voice }) {
       headers: { "Authorization": "Bearer " + cfg.slngKey, "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (!r.ok) return { error: "slng_http_" + r.status };
+    if (!r.ok) { logEvent({ sponsor: "SLNG", op: "tts", via: via || text, ok: false, request: { endpoint: SLNG_TTS, text: (text || "").slice(0, 200), voice }, response: { status: r.status } }); return { error: "slng_http_" + r.status }; }
     const buf = await r.arrayBuffer();
+    logEvent({ sponsor: "SLNG", op: "tts", via: via || text, request: { endpoint: SLNG_TTS, text: (text || "").slice(0, 200), voice }, response: { status: r.status, audio_bytes: buf.byteLength } });
     return { audio: "data:audio/wav;base64," + abToBase64(buf) };
   } catch (e) { return { error: "slng_fetch" }; }
 }
 
 // ---- Tavily: research the whole web ----------------------------------------
-async function tavilyResearch({ query }) {
+async function tavilyResearch({ query, via }) {
   const cfg = await getCfg();
   if (!cfg.tavilyKey) return { error: "no_tavily_key" };
   try {
+    const reqBody = { query, max_results: 5, include_answer: "advanced", search_depth: "advanced" };
     const r = await fetchT(TAVILY_SEARCH, {
       method: "POST",
       headers: { "Authorization": "Bearer " + cfg.tavilyKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, max_results: 5, include_answer: "advanced", search_depth: "advanced" })
+      body: JSON.stringify(reqBody)
     });
     const j = await r.json();
-    if (!r.ok) return { error: "tavily_http_" + r.status };
+    if (!r.ok) { logEvent({ sponsor: "Tavily", op: "search", via: via || query, ok: false, request: reqBody, response: { status: r.status } }); return { error: "tavily_http_" + r.status }; }
+    logEvent({ sponsor: "Tavily", op: "search", via: via || query, request: reqBody, response: { answer: (j.answer || "").slice(0, 400), results: (j.results || []).map(x => ({ title: x.title, url: x.url })).slice(0, 5) } });
     return { answer: j.answer || "", results: (j.results || []).map(x => ({ title: x.title, url: x.url })) };
   } catch (e) { return { error: "tavily_fetch" }; }
 }
@@ -241,6 +258,7 @@ async function routeIntent({ soul, message, name, history }) {
     if (!r.ok) return { action: "answer" };
     let t = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text).join("").trim().replace(/^```json/i, "").replace(/```$/, "").trim();
     const o = JSON.parse(t);
+    logEvent({ sponsor: "Gemini", op: "route", via: message, request: { model: cfg.geminiModel, user: message }, response: { action: o.action, target: o.url || o.site || o.query || "", raw: t.slice(0, 300) } });
     if (o.action === "site_search" && o.site && o.query) return { action: "site_search", site: o.site, query: o.query, say: o.say || "On it!" };
     if (o.action === "recall" && o.query) return { action: "recall", query: o.query, say: o.say || "Let me remember..." };
     if (o.action === "perform") return { action: "perform", say: o.say || "wheee!" };
@@ -257,8 +275,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
       switch (msg && msg.type) {
-        case "CHAT": sendResponse(await geminiReply({ soul: msg.soul, message: msg.message, context: msg.context, taskType: "creative", history: msg.history })); break;
-        case "PAGE_QA": sendResponse(await geminiReply({ soul: msg.soul, message: msg.question, context: msg.text, taskType: "qa", history: msg.history })); break;
+        case "CHAT": sendResponse(await geminiReply({ soul: msg.soul, message: msg.message, context: msg.context, taskType: "creative", history: msg.history, via: msg.via })); break;
+        case "PAGE_QA": sendResponse(await geminiReply({ soul: msg.soul, message: msg.question, context: msg.text, taskType: "qa", history: msg.history, via: msg.via })); break;
         case "SPEAK": sendResponse(await slngSpeak(msg)); break;
         case "RESEARCH": sendResponse(await tavilyResearch(msg)); break;
         case "OPEN_GAME": sendResponse(await openGame()); break;

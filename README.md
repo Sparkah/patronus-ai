@@ -1,66 +1,56 @@
 # 🪄 Patronus AI
 
-**Pick your guardian. It lives in your browser, reacts, talks back in a real voice,
-researches the web for you, and launches games when you're bored. Unlock one new
-soul a day.**
+**Pick a meme guardian. It lives on every page, talks back in a real voice, and
+actually does things - searches stores for you, researches the web, plays games,
+goes wild on command. Collect a new soul every day.**
 
-Built at the {Tech: Europe} London AI Hackathon. Open Innovation track.
+Built at the {Tech: Europe} London AI Hackathon. **Open Innovation** track.
+90-second demo: see [`DEMO.md`](DEMO.md).
 
-A Patronus is a tiny animated character (a cat, a dog, or a surf-internet grandma)
-that overlays onto every page you visit. It is not a chatbot in a sidebar - it is a
-*creature on your screen*. It bobs, naps when you idle, surfs across the page, and
-when you talk to it, it answers out loud, in character.
+A Patronus is an animated character (surf-internet granny, Tung Tung, a wizard named
+Harry, a smug cat...) that overlays onto every page via Shadow DOM. Not a sidebar
+chatbot - a creature on your screen that bobs, naps, surfs across the page, talks out
+loud, and takes real actions when you ask.
 
-## Why it's more than a mascot
+## What it does
+- **Agentic shopping (visible).** "find me adidas flip flops" -> the character walks to
+  the site's own search bar, types it, lands on results, and recommends specific
+  products with a one-line reason each. Works by driving the page, not guessing URLs.
+- **Web research.** "what do reviews say about X" -> grounded answer with sources.
+- **Page Q&A.** "summarize this page."
+- **Voice both ways.** It speaks every reply (SLNG); press the mic to talk to it.
+- **Play games.** "play the brainrot game" -> a factory game opens in an in-browser overlay.
+- **Go wild.** "do a dance" / "fly around" -> it zooms the screen with confetti.
+- **Souls + memory.** 7 characters, each a distinct persona (`souls/<id>.md`) with its
+  own voice and its own chat history. One stays locked as the daily "coming soon" unlock.
 
-Each character has a **soul** (`extension/souls/<name>.md`) - a personality persona
-that drives both what it says (Gemini) and how it sounds (SLNG voice). Surf Granny
-roasts slow websites. Mochi the cat helps you while pretending it's beneath her.
-You **unlock one soul per day**, so there's a reason to come back tomorrow.
+## The sponsor stack (each one load-bearing, visible in the UI)
+Every action is tagged on screen with the sponsors that powered it.
+- **Gemini (Google DeepMind)** - the brain: intent routing, product reasoning, page Q&A;
+  plus all character art (Imagen / gemini-3-pro-image) and Veo animations.
+- **SLNG** - the voice: every reply spoken in-character; mic for voice input.
+- **Tavily** - the eyes: real web research with sources.
+- **Mubit / Minima** - the metabolism: picks the cheapest capable model per call, shown
+  live in each reply's tag.
+- **Aikido** - security scanning over this repo.
+- **Superlinked** - semantic memory (optional; shown as "coming soon" until its cluster
+  endpoint is set).
 
-## The partner stack (every one is load-bearing, not bolted on)
-
-Each partner technology is one of the Patronus's *powers*:
-
-- **Gemini (Google DeepMind)** - the brain. Soul-driven chat, "what's on this page?"
-  answers, and (build-time) Imagen/Veo for the character art.
-- **SLNG** - the voice. Replies are spoken aloud via SLNG TTS, a different voice per
-  character. Granny actually sounds like granny.
-- **Tavily** - the eyes. "Research the whole web" grounds answers in real sources.
-- **Mubit / Minima** - the metabolism. Routes each request to the cheapest model that
-  clears the quality bar, so your guardian "eats cheap." *(wiring in progress)*
-- **n8n** - the instincts. Background "watch this page and ping me" autopilot. *(planned)*
-- **Superlinked** - the memory. Semantic recall of what you've browsed. *(planned)*
-- **Aikido** - security scanning over this very repo.
-
-If a key is missing, the feature degrades honestly (voice falls back to the browser's
-built-in speech synthesis, etc.) - nothing is faked in the UI.
+Uses 4 partner techs live (Gemini, SLNG, Tavily, Mubit) - past the 3 required.
 
 ## Architecture
-
-A Manifest V3 Chrome extension, no server required:
-
-- `extension/content.js` - injects the character into every page via **Shadow DOM**
-  (so no site's CSS can break it). Idle/nap/wander/surf animation, draggable, an
-  in-page command panel (Talk / This page / Web / Bored), and voice playback.
-- `extension/background.js` - the service worker. Calls Gemini, SLNG, and Tavily
-  **directly**. API keys live in `chrome.storage.local` (pasted in the popup) and are
-  **never** committed.
-- `extension/popup.html/js` - your soul collection, the daily unlock, key settings.
-- `extension/souls/*.md` - the personalities.
-- `dashboard/` + `refinery.py` (optional) - a second surface: a multi-agent research
-  swarm (Gemini + Tavily) with live telemetry, reusable for the "whole web" power.
+Manifest V3 Chrome extension, no server required:
+- `extension/content.js` - the on-page character (Shadow DOM), animation, voice, the
+  agentic dispatch, the visible search, and the game overlay.
+- `extension/background.js` - service worker. Calls Gemini, SLNG, Tavily and Mubit
+  directly; routes intent; hands site-searches to the opened tab.
+- `extension/popup.js` - the soul collection + the powers strip.
+- `extension/souls/*.md` - the personalities. `extension/chars/*` - art + Veo loops.
+- Keys live in `extension/config.local.js` (gitignored, never committed).
 
 ## Run it
-
-1. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and
-   select the `extension/` folder.
-2. Open any normal website - your Patronus appears bottom-right.
-3. Click the extension icon -> **Connect powers** -> paste your Gemini / SLNG / Tavily
-   keys (it works with the browser's built-in voice even before you add SLNG).
-4. Click your guardian to talk to it. Come back tomorrow to unlock the next soul.
-
-## What's next
-
-Close the loop: Minima cost-routing on every call, n8n background watchers, Superlinked
-browsing memory, character art via Imagen/Veo, and shipping to the Chrome Web Store.
+1. `chrome://extensions` -> Developer mode -> **Load unpacked** -> select `extension/`.
+2. Open any normal website - your guardian appears bottom-right (keys are baked in, so
+   it works immediately).
+3. Click it and type or speak: "find me adidas flip flops", "do a dance",
+   "play the brainrot game". Switch souls in the popup.

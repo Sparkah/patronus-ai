@@ -22,7 +22,7 @@
     wizard: "expecto... assistance! what do you need?"
   };
 
-  let charId = DEFAULT_CHAR, muted = false, soulCache = {}, history = [];
+  let charId = DEFAULT_CHAR, muted = false, soulCache = {}, history = [], lastVia = "";
   let bubbleTimer = null, idleTimer = null, wanderTimer = null, recog = null, audio = null;
 
   const host = document.createElement("div");
@@ -144,7 +144,7 @@
     if (speak && !muted) voice(text);
   }
   async function voice(text) {
-    const r = await send({ type: "SPEAK", text: text.slice(0, 300), voice: cur().voice });
+    const r = await send({ type: "SPEAK", text: text.slice(0, 300), voice: cur().voice, via: lastVia });
     if (r && r.audio) { try { if (audio) audio.pause(); audio = new Audio(r.audio); audio.play().catch(() => browserVoice(text)); return; } catch (e) {} }
     browserVoice(text);
   }
@@ -163,10 +163,10 @@
   // ---- the one agentic input: she decides what to do --------------------------
   async function submit() {
     const q = inp.value.trim(); if (!q) return;
-    inp.value = ""; resetIdle();
+    inp.value = ""; resetIdle(); lastVia = q;
     pushMsg("you", q);
     const soul = await getSoul(); const ctx = recentContext();
-    const route = await send({ type: "ACT", soul, message: q, name: cur().name, history: ctx });
+    const route = await send({ type: "ACT", soul, message: q, name: cur().name, history: ctx, via: q });
     const act = route && route.action;
     try {
       if (act === "navigate" && route.url) {
@@ -187,14 +187,14 @@
         botReply(route.say || "wheee! watch this!"); flyAround();
       } else if (act === "page_qa") {
         const text = document.body ? document.body.innerText.slice(0, 14000) : "";
-        const r = await send({ type: "PAGE_QA", soul, question: q, text, history: ctx });
+        const r = await send({ type: "PAGE_QA", soul, question: q, text, history: ctx, via: q });
         botReply(r.text || "(couldn't read this page)", r.minima ? { tag: `🧠 ${r.minima}` } : {});
       } else if (act === "web_research") {
-        const r = await send({ type: "RESEARCH", query: route.query || q });
+        const r = await send({ type: "RESEARCH", query: route.query || q, via: q });
         if (r && r.results) { botReply(r.answer || "here's what I found.", { links: r.results.slice(0, 5).map(x => ({ url: x.url, label: x.title || x.url })), tag: "✦ Tavily web search · Gemini" }); }
         else botReply("connect Tavily and I'll search the whole web.", {});
       } else {
-        const r = await send({ type: "CHAT", soul, message: q, context: document.title, history: ctx });
+        const r = await send({ type: "CHAT", soul, message: q, context: document.title, history: ctx, via: q });
         botReply(r.text || "(hmm, no answer)", r.minima ? { tag: `🧠 ${r.minima}` } : {});
       }
     } catch (e) { botReply("oops, something hiccuped - try again?"); }
@@ -354,6 +354,7 @@
   }
   async function runVisibleSearch(query) {
     togglePanel(true);
+    lastVia = `find "${query}"`;
     botReply(`let me find the search bar and look for "${query}"...`);
     await dismissCookies();
     const inp = await findSearchInput();
@@ -387,17 +388,18 @@
   }
   async function suggestFromResults(query) {
     togglePanel(true);
+    lastVia = `find "${query}"`;
     const soul = await getSoul();
     const products = extractProducts();
     if (products.length) {
       const list = products.slice(0, 10).map((p, i) => `${i + 1}. ${p.name} - ${p.price}`).join("\n");
-      const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(),
+      const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(), via: lastVia,
         message: `I searched "${query}". Products on this page:\n${list}\n\nPick the 2-3 best for me. For EACH, give its name and ONE short reason it fits (price, value, use or style). Be specific and genuinely helpful, in your character's voice. Under 60 words total.` });
       const tag = "✦ site search · Gemini reasoning" + (r && r.minima ? ` · Mubit ${r.minima}` : "") + (muted ? "" : " · SLNG voice");
       botReply((r && r.text) || "here's what I'd pick for you!", { links: products.slice(0, 4).map(p => ({ url: p.url, label: `${p.name} - ${p.price}` })), tag });
     } else {
       const text = document.body ? document.body.innerText.slice(0, 9000) : "";
-      const r = await send({ type: "PAGE_QA", soul, question: `I searched "${query}". Recommend 2-3 results that fit me and why, briefly.`, text });
+      const r = await send({ type: "PAGE_QA", soul, question: `I searched "${query}". Recommend 2-3 results that fit me and why, briefly.`, text, via: lastVia });
       if (r && (r.text || !r.error)) botReply(r.text || "here's what I found!", { tag: "✦ site search · Gemini reasoning" });
     }
   }
