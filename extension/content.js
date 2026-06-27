@@ -12,13 +12,14 @@
     cat:      { name: "Mochi",       emoji: "🐱", accent: "#ff9bb3", voice: "aura-2-thalia-en" },
     dog:      { name: "Biscuit",     emoji: "🐶", accent: "#ffce7a", voice: "aura-2-orion-en" },
     pupa:     { name: "Pupa",        emoji: "🐛", accent: "#9be08a", voice: "aura-2-luna-en" },
-    skibidi:  { name: "Skibidi",     emoji: "🚽", accent: "#bcccdc", voice: "aura-2-orion-en" }
+    wizard:   { name: "The Wizard",  emoji: "🧙", accent: "#9b8cff", voice: "aura-2-orion-en" }
   };
   const DEFAULT_CHAR = "grandma";
   const GREETING = {
     grandma: "cowabunga, sweetie - what are we doing?", tungtung: "tung tung tung! what's the mission?",
     sixseven: "ayy six seven - whatcha need?", cat: "mrrp. what do you want, human?",
-    dog: "HI!! what are we finding today??", pupa: "hi. let's become something today.", skibidi: "skibidi. ready."
+    dog: "HI!! what are we finding today??", pupa: "hi. let's become something today.",
+    wizard: "expecto... assistance! what do you need?"
   };
 
   let charId = DEFAULT_CHAR, muted = false, soulCache = {}, history = [];
@@ -176,6 +177,8 @@
         botReply(route.say || "Here's what I remembered:", links.length ? { links } : { tag: "(connect Superlinked to recall saved pages)" });
       } else if (act === "play_game") {
         botReply(route.say || "let's play!"); confetti(); await send({ type: "OPEN_GAME" });
+      } else if (act === "perform") {
+        botReply(route.say || "wheee! watch this!"); flyAround();
       } else if (act === "page_qa") {
         const text = document.body ? document.body.innerText.slice(0, 14000) : "";
         const r = await send({ type: "PAGE_QA", soul, question: q, text, history: ctx });
@@ -220,6 +223,22 @@
     setTimeout(() => { clearInterval(trail); pet.style.transition = ""; confetti(); scheduleWander(); }, 5400);
   }
   function scheduleWander() { clearTimeout(wanderTimer); wanderTimer = setTimeout(specialMove, 24000 + Math.random() * 26000); }
+
+  // "fly around the screen, crazy animate" -> zoom to random spots with confetti + spins
+  function flyAround() {
+    clearTimeout(wanderTimer); resetIdle();
+    let i = 0; const moves = 7;
+    pet.style.transition = "left .5s cubic-bezier(.34,1.4,.5,1), top .5s cubic-bezier(.34,1.4,.5,1), transform .5s";
+    (function step() {
+      if (i++ >= moves) { pet.style.transition = ""; pet.style.transform = ""; confetti(); scheduleWander(); return; }
+      const x = 30 + Math.random() * Math.max(60, window.innerWidth - 150);
+      const y = 30 + Math.random() * Math.max(60, window.innerHeight - 150);
+      pet.style.right = "auto"; pet.style.bottom = "auto"; pet.style.left = x + "px"; pet.style.top = y + "px";
+      pet.style.transform = `rotate(${Math.random() * 80 - 40}deg) scale(1.12)`;
+      confetti(x + 42, y + 20);
+      setTimeout(step, 520);
+    })();
+  }
 
   function togglePanel(open) { panel.classList.toggle("open", open ?? !panel.classList.contains("open")); if (panel.classList.contains("open")) { resetIdle(); renderThread(); inp.focus(); } }
   let dragMoved = false;

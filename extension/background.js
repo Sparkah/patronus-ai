@@ -176,15 +176,17 @@ async function siteSearch({ site, query }) {
       target: { tabId: tab.id }, args: [query],
       func: async (q) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
-        const find = () => {
+        const vis = e => e && e.offsetParent !== null && e.getClientRects().length;
+        const findInput = () => {
           const els = [...document.querySelectorAll('input[type="search"], input[name="q"], input[name*="search" i], input[name*="term" i], input[placeholder*="search" i], input[aria-label*="search" i], input[id*="search" i]')];
-          return els.find(e => e.offsetParent !== null) || els[0];
+          return els.find(vis) || null;
         };
-        let inp = find();
-        if (!inp || inp.offsetParent === null) {                 // search box hidden - reveal it
-          const tog = [...document.querySelectorAll('button,[role="button"],a')].find(b =>
-            /search/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.className || '') + ' ' + (b.id || '')));
-          if (tog) { tog.click(); await sleep(1000); inp = find(); }
+        let inp = findInput();
+        for (let i = 0; i < 3 && !inp; i++) {                    // reveal a hidden search box (click its VISIBLE toggle)
+          const togs = [...document.querySelectorAll('button,[role="button"],a')].filter(b => /search/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.className || '') + ' ' + (b.id || '') + ' ' + (b.getAttribute('data-test') || '')));
+          const tog = togs.find(vis) || togs[0];
+          if (tog) { try { tog.click(); } catch (e) {} await sleep(1100); }
+          inp = findInput();
         }
         if (!inp) return { ok: false };
         inp.focus();
@@ -192,9 +194,12 @@ async function siteSearch({ site, query }) {
         setter.call(inp, q);
         inp.dispatchEvent(new Event('input', { bubbles: true }));
         inp.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(250);
+        await sleep(350);
         const form = inp.closest('form');
         if (form) { form.requestSubmit ? form.requestSubmit() : form.submit(); return { ok: true, via: 'form' }; }
+        // submit via a nearby submit/search button, else Enter
+        const sb = [...document.querySelectorAll('button[type="submit"], button[aria-label*="search" i], [role="button"][aria-label*="search" i]')].find(vis);
+        if (sb) { sb.click(); return { ok: true, via: 'btn' }; }
         ['keydown', 'keypress', 'keyup'].forEach(t =>
           inp.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })));
         return { ok: true, via: 'enter' };
@@ -249,7 +254,7 @@ async function routeIntent({ soul, message, name, history }) {
     `Personality (for the spoken line only):\n${(soul || "").slice(0, 800)}\n\n` +
     (recent ? `Recent conversation (memory/context):\n${recent}\n\n` : "") +
     `STRONGLY prefer a real ACTION over just answering whenever the user says find / get / show / open / go / buy / where / play / watch / research / remind. ` +
-    `Reply ONLY with minified JSON: {"action":"site_search"|"navigate"|"page_qa"|"web_research"|"play_game"|"automate"|"recall"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
+    `Reply ONLY with minified JSON: {"action":"site_search"|"navigate"|"page_qa"|"web_research"|"play_game"|"perform"|"automate"|"recall"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
     `- A NAMED online store/brand (Harrods, Zara, Nike, eBay...): action="site_search", site=its domain (e.g. "harrods.com"), query=search terms. Do NOT guess its search URL. ` +
     `- Amazon: action="navigate", url="https://www.amazon.co.uk/s?k=QUERY". ` +
     `- A shop/brand/place + a location, or "near me"/"in <city>": action="navigate", url="https://www.google.com/maps/search/QUERY". ` +
@@ -258,7 +263,8 @@ async function routeIntent({ soul, message, name, history }) {
     `- "summarize/explain/what's on THIS page/article": action="page_qa". ` +
     `- "research X / latest on X / dig into X": action="web_research", query=topic. ` +
     `- "I'm bored / play a game / entertain me": action="play_game". ` +
-    `- Schedule/remind/automate: action="automate", query=the automation. ` +
+    `- "fly around / dance / spin / go crazy / do a trick / show off / animate yourself / draw stuff": action="perform" (a fun on-screen animation, NOT automation). ` +
+    `- Schedule/remind/automate a real task ("every morning email me..."): action="automate", query=the automation. ` +
     `- Recall ("what did I see about...", "that page I saved about..."): action="recall", query=topic. ` +
     `- Only pure conversation: action="answer". ` +
     `URL-encode queries. "say" = ONE short in-character spoken line under 22 words.`;
@@ -278,6 +284,7 @@ async function routeIntent({ soul, message, name, history }) {
     if (o.action === "site_search" && o.site && o.query) return { action: "site_search", site: o.site, query: o.query, say: o.say || "On it!" };
     if (o.action === "automate" && o.query) return { action: "automate", query: o.query, say: o.say || "Setting that up!" };
     if (o.action === "recall" && o.query) return { action: "recall", query: o.query, say: o.say || "Let me remember..." };
+    if (o.action === "perform") return { action: "perform", say: o.say || "wheee!" };
     if (o.action === "page_qa") return { action: "page_qa", say: o.say || "Reading this page..." };
     if (o.action === "web_research") return { action: "web_research", query: o.query || message, say: o.say || "Searching the web..." };
     if (o.action === "play_game") return { action: "play_game", say: o.say || "Let's play!" };
