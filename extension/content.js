@@ -192,8 +192,11 @@
     const q = inp.value.trim(); if (!q) return;
     inp.value = ""; resetIdle(); lastVia = q;
     pushMsg("you", q);
-    // hardcoded: fidget spinner (Six Seven's bit). reliable, no router round-trip.
-    if (/\b(spin(ner)?|fidget)\b/i.test(q)) {
+    // hardcoded: fidget spinner (Six Seven's bit). ONLY on an imperative spin command,
+    // never on a question that merely mentions spinners ("research fidget spinners").
+    const spinWord = /\b(spin|spinner|fidget)\b/i.test(q);
+    const askingAbout = /\b(research|history|what|whats|who|whose|when|where|why|how|best|top|review|reviews|about|explain|tell|find|search|buy|price|cheap|origin|invent|meaning|info)\b/i.test(q) || q.includes("?");
+    if (spinWord && !askingAbout) {
       botReply(charId === "sixseven" ? "six seven!! 🌀 watch this spinnnn!!" : "okok - flick it and watch!");
       showSpinner(); return;
     }
