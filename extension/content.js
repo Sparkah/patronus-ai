@@ -175,9 +175,6 @@
       } else if (act === "site_search" && route.site) {
         botReply(route.say || "On it!", { tag: `exploring ${route.site} for "${route.query}"…` });
         confetti(); await send({ type: "SITE_SEARCH", site: route.site, query: route.query });
-      } else if (act === "automate") {
-        const r = await send({ type: "N8N_RUN", task: route.query });
-        botReply(route.say || "Setting that up!", (r && r.ok) ? {} : { tag: "(connect n8n to actually run this)" });
       } else if (act === "recall") {
         const r = await send({ type: "SL_RECALL", query: route.query });
         const links = (r && r.results || []).slice(0, 5).map(x => ({ url: x.url || "#", label: x.title || x.url }));
@@ -194,7 +191,7 @@
         botReply(r.text || "(couldn't read this page)", r.minima ? { tag: `🧠 ${r.minima}` } : {});
       } else if (act === "web_research") {
         const r = await send({ type: "RESEARCH", query: route.query || q });
-        if (r && r.results) { botReply(r.answer || "here's what I found.", { links: r.results.slice(0, 5).map(x => ({ url: x.url, label: x.title || x.url })) }); }
+        if (r && r.results) { botReply(r.answer || "here's what I found.", { links: r.results.slice(0, 5).map(x => ({ url: x.url, label: x.title || x.url })), tag: "✦ Tavily web search · Gemini" }); }
         else botReply("connect Tavily and I'll search the whole web.", {});
       } else {
         const r = await send({ type: "CHAT", soul, message: q, context: document.title, history: ctx });
@@ -368,12 +365,41 @@
     chrome.storage.local.set({ pendingSuggest: { host: location.hostname, query, ts: Date.now() } });
     submitSearch(inp);
   }
+  // scrape REAL product cards (image + short text + product link) off a results page
+  function extractProducts() {
+    const out = [], seen = new Set(), priceRe = /(?:£|\$|€)\s?\d[\d.,]*/;
+    const bad = /below|under|up to|from\s*[£$€]|trending|view all|discover|new in|categor|explore|shop all/i;
+    const conts = [...document.querySelectorAll('li,article,[class*="product" i],[class*="card" i],[data-auto-id*="product" i]')];
+    for (const c of conts) {
+      if (c.querySelector('li,article')) continue;                 // leaf-ish cards only
+      const txt = (c.textContent || "").replace(/\s+/g, " ").trim();
+      if (txt.length > 220) continue;                              // product cards are short
+      const pm = txt.match(priceRe); if (!pm || bad.test(txt)) continue;   // skip promo/category tiles
+      const link = c.querySelector('a[href]'); if (!link || !/^https?:/.test(link.href) || seen.has(link.href)) continue;
+      if (!c.querySelector('img')) continue;                       // real products have an image
+      let name = ((c.querySelector('h1,h2,h3,h4,[class*="title" i],[class*="name" i]') || {}).textContent || "").trim() ||
+        ((c.querySelector("img") || {}).alt || "").trim() || (link.getAttribute("aria-label") || "").trim() || (link.textContent || "").trim();
+      name = name.replace(priceRe, "").replace(/\s+/g, " ").trim().slice(0, 70); if (!name) continue;
+      seen.add(link.href); out.push({ name, price: pm[0].replace(/\s/g, ""), url: link.href });
+      if (out.length >= 12) break;
+    }
+    return out;
+  }
   async function suggestFromResults(query) {
     togglePanel(true);
     const soul = await getSoul();
-    const text = document.body ? document.body.innerText.slice(0, 12000) : "";
-    const r = await send({ type: "PAGE_QA", soul, question: `I searched this site for "${query}". From these results, recommend 2-3 specific items that fit and say why, briefly.`, text });
-    if (r && (r.text || !r.error)) botReply(r.text || "here's what I found!", r.minima ? { tag: `🧠 ${r.minima}` } : {});
+    const products = extractProducts();
+    if (products.length) {
+      const list = products.slice(0, 10).map((p, i) => `${i + 1}. ${p.name} - ${p.price}`).join("\n");
+      const r = await send({ type: "CHAT", soul, context: document.title, history: recentContext(),
+        message: `I searched "${query}" and these are the products on the page:\n${list}\n\nIn character, recommend the 2-3 that best fit me and say why in one short line each, by name.` });
+      const tag = "✦ site search · Gemini reasoning" + (r && r.minima ? ` · Mubit ${r.minima}` : "") + (muted ? "" : " · SLNG voice");
+      botReply((r && r.text) || "here's what I'd pick for you!", { links: products.slice(0, 4).map(p => ({ url: p.url, label: `${p.name} - ${p.price}` })), tag });
+    } else {
+      const text = document.body ? document.body.innerText.slice(0, 9000) : "";
+      const r = await send({ type: "PAGE_QA", soul, question: `I searched "${query}". Recommend 2-3 results that fit me and why, briefly.`, text });
+      if (r && (r.text || !r.error)) botReply(r.text || "here's what I found!", { tag: "✦ site search · Gemini reasoning" });
+    }
   }
 
   // play an embedded game from the factory as an in-browser overlay

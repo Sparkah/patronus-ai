@@ -215,7 +215,7 @@ async function routeIntent({ soul, message, name, history }) {
     `Personality (for the spoken line only):\n${(soul || "").slice(0, 800)}\n\n` +
     (recent ? `Recent conversation (memory/context):\n${recent}\n\n` : "") +
     `STRONGLY prefer a real ACTION over just answering whenever the user says find / get / show / open / go / buy / where / play / watch / research / remind. ` +
-    `Reply ONLY with minified JSON: {"action":"site_search"|"navigate"|"page_qa"|"web_research"|"play_game"|"perform"|"automate"|"recall"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
+    `Reply ONLY with minified JSON: {"action":"site_search"|"navigate"|"page_qa"|"web_research"|"play_game"|"perform"|"recall"|"answer","site":"","query":"","url":"","say":""}. Rules: ` +
     `- A NAMED online store/brand (Harrods, Zara, Nike, eBay...): action="site_search", site=its domain (e.g. "harrods.com"), query=search terms. Do NOT guess its search URL. ` +
     `- Amazon: action="navigate", url="https://www.amazon.co.uk/s?k=QUERY". ` +
     `- A shop/brand/place + a location, or "near me"/"in <city>": action="navigate", url="https://www.google.com/maps/search/QUERY". ` +
@@ -223,9 +223,8 @@ async function routeIntent({ soul, message, name, history }) {
     `- General web lookups/facts: action="navigate", url="https://www.google.com/search?q=QUERY". ` +
     `- "summarize/explain/what's on THIS page/article": action="page_qa". ` +
     `- "research X / latest on X / dig into X": action="web_research", query=topic. ` +
-    `- "I'm bored / play a game / entertain me": action="play_game". ` +
-    `- "fly around / dance / spin / go crazy / do a trick / show off / animate yourself / draw stuff": action="perform" (a fun on-screen animation, NOT automation). ` +
-    `- Schedule/remind/automate a real task ("every morning email me..."): action="automate", query=the automation. ` +
+    `- "I'm bored / play a game / play the brainrot game / brainrot 2048 / meme game / play <name>": action="play_game", query=the game name if mentioned. ` +
+    `- "fly around / dance / spin / go crazy / do a trick / show off / animate yourself / draw stuff": action="perform" (a fun on-screen animation). ` +
     `- Recall ("what did I see about...", "that page I saved about..."): action="recall", query=topic. ` +
     `- Only pure conversation: action="answer". ` +
     `URL-encode queries. "say" = ONE short in-character spoken line under 22 words.`;
@@ -243,7 +242,6 @@ async function routeIntent({ soul, message, name, history }) {
     let t = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text).join("").trim().replace(/^```json/i, "").replace(/```$/, "").trim();
     const o = JSON.parse(t);
     if (o.action === "site_search" && o.site && o.query) return { action: "site_search", site: o.site, query: o.query, say: o.say || "On it!" };
-    if (o.action === "automate" && o.query) return { action: "automate", query: o.query, say: o.say || "Setting that up!" };
     if (o.action === "recall" && o.query) return { action: "recall", query: o.query, say: o.say || "Let me remember..." };
     if (o.action === "perform") return { action: "perform", say: o.say || "wheee!" };
     if (o.action === "page_qa") return { action: "page_qa", say: o.say || "Reading this page..." };
@@ -264,7 +262,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "SPEAK": sendResponse(await slngSpeak(msg)); break;
         case "RESEARCH": sendResponse(await tavilyResearch(msg)); break;
         case "OPEN_GAME": sendResponse(await openGame()); break;
-        case "GAME_URL": { const c = await getCfg(); let url = c.games[Math.floor(Math.random() * c.games.length)]; if (msg.query) { const qq = String(msg.query).toLowerCase(); const m = c.games.find(u => u.toLowerCase().includes(qq.replace(/\s+/g, "-")) || u.toLowerCase().includes(qq.replace(/[^a-z0-9]/g, ""))); if (m) url = m; } sendResponse({ url }); break; }
+        case "GAME_URL": { const qq = String(msg.query || "").toLowerCase(); let url; if (/brainrot|meme|2048/.test(qq)) { url = "https://game-factory.tech/play?slug=brainrot_2048"; } else { const c = await getCfg(); url = c.games[Math.floor(Math.random() * c.games.length)]; } sendResponse({ url }); break; }
         case "ACT": sendResponse(await routeIntent(msg)); break;
         case "OPEN_URL": sendResponse(await openUrl(msg)); break;
         case "SITE_SEARCH": sendResponse(await siteSearch(msg)); break;
