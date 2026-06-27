@@ -1,0 +1,15 @@
+# Secrets - NEVER commit. A leaked Gemini key auto-kills the whole temp project,
+# and a later "delete the key" commit does NOT help: it stays in git history.
+.env
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs / local
+*.log
+.DS_Store

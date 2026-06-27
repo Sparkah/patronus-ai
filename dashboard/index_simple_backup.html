@@ -1,0 +1,150 @@
+<!doctype html>
+<!--
+  Agent Flight Recorder - live mission-control dashboard.
+  Polls the FastAPI endpoints (which read ClickHouse) every 1.5s. Vanilla JS, no
+  build step. Auto-selects the most recent run.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Flight Recorder</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#121822; --panel2:#0e141d; --line:#1e2a3a;
+    --ink:#d7e0ea; --dim:#7889a0; --cyan:#35e0d0; --green:#5cf08a;
+    --amber:#ffce5c; --red:#ff5c6c; --violet:#9d7bff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  header{display:flex;align-items:center;gap:14px;padding:14px 20px;
+    border-bottom:1px solid var(--line);background:var(--panel2)}
+  .logo{font-weight:700;letter-spacing:.14em;color:var(--cyan)}
+  .live{display:flex;align-items:center;gap:6px;color:var(--green);font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 0 0 rgba(92,240,138,.6);animation:p 1.4s infinite}
+  @keyframes p{0%{box-shadow:0 0 0 0 rgba(92,240,138,.5)}70%{box-shadow:0 0 0 7px rgba(92,240,138,0)}}
+  .stats{margin-left:auto;display:flex;gap:22px}
+  .stat b{display:block;font-size:18px;color:#fff}
+  .stat span{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+  main{display:grid;grid-template-columns:240px 1fr;gap:0;height:calc(100vh - 59px)}
+  .side{border-right:1px solid var(--line);overflow:auto;background:var(--panel2)}
+  .side h3,.col h3{font-size:11px;color:var(--dim);text-transform:uppercase;
+    letter-spacing:.1em;margin:16px 16px 8px}
+  .run{padding:10px 16px;border-left:3px solid transparent;cursor:pointer}
+  .run:hover{background:#0f1620}
+  .run.sel{background:#10202a;border-left-color:var(--cyan)}
+  .run .rid{color:var(--ink)}
+  .run .meta{font-size:11px;color:var(--dim)}
+  .run .fail{color:var(--red)}
+  .body{overflow:auto;padding:8px 20px 40px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card .top{display:flex;justify-content:space-between;align-items:center}
+  .aid{color:#fff;font-weight:600}
+  .badge{font-size:10px;padding:2px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em}
+  .b-worker{background:#10242e;color:var(--cyan)}
+  .b-meta{background:#211a36;color:var(--violet)}
+  .kv{display:flex;justify-content:space-between;font-size:12px;margin-top:6px;color:var(--dim)}
+  .kv b{color:var(--ink);font-weight:600}
+  .bar{height:5px;border-radius:3px;background:#16202c;margin-top:8px;overflow:hidden}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green))}
+  .bad{color:var(--red)!important}
+  .grid2{display:grid;grid-template-columns:1fr 380px;gap:18px;margin-top:8px}
+  .tick{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;font-size:12px}
+  .row{display:grid;grid-template-columns:74px 92px 1fr 60px;gap:8px;padding:6px 12px;
+    border-top:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .row:first-child{border-top:0}
+  .row .ok{color:var(--green)} .row .rfail{color:var(--red)}
+  .et{color:var(--ink)}
+  .autopsy{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;
+    white-space:pre-wrap;font-size:12.5px;color:#cdd8e6;max-height:520px;overflow:auto}
+  .autopsy h4{margin:0 0 8px;color:var(--violet);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+  .empty{color:var(--dim);padding:40px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">◢ AGENT FLIGHT RECORDER</span>
+  <span class="live"><span class="dot"></span>live · ClickHouse</span>
+  <div class="stats" id="stats"></div>
+</header>
+<main>
+  <div class="side">
+    <h3>Runs</h3>
+    <div id="runs"></div>
+  </div>
+  <div class="body">
+    <div class="cards" id="agents"></div>
+    <div class="grid2">
+      <div>
+        <h3>Event stream</h3>
+        <div class="tick" id="tick"></div>
+      </div>
+      <div>
+        <h3>Autopsy</h3>
+        <div class="autopsy" id="autopsy"><span class="empty">No autopsy yet. Run run_autopsy.py.</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+let SEL=null, maxLat=1;
+const $=id=>document.getElementById(id);
+const f=n=>n>=1000?(n/1000).toFixed(1)+'k':n;
+const money=n=>'$'+(+n).toFixed(4);
+
+async function j(u){const r=await fetch(u);return r.json();}
+
+async function tick(){
+  const s=await j('/api/stats');
+  $('stats').innerHTML=[
+    ['events',s.events],['agents',s.agents],['runs',s.runs],
+    ['tokens',f(s.tokens)],['cost',money(s.cost_usd)]
+  ].map(([k,v])=>`<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+
+  const runs=await j('/api/runs');
+  if(!SEL && runs.length) SEL=runs[0].run_id;
+  $('runs').innerHTML=runs.map(r=>`
+    <div class="run ${r.run_id===SEL?'sel':''}" onclick="pick('${r.run_id}')">
+      <div class="rid">${r.run_id}</div>
+      <div class="meta">${r.agents} agents · ${f(r.tokens)} tok · ${money(r.cost_usd)}
+        ${r.fails?`· <span class="fail">${r.fails} fail</span>`:''}</div>
+    </div>`).join('') || '<div class="empty">no runs</div>';
+
+  if(SEL) await detail(SEL);
+}
+
+async function detail(id){
+  const d=await j('/api/run/'+id);
+  maxLat=Math.max(1,...d.agents.map(a=>a.latency_ms));
+  $('agents').innerHTML=d.agents.map(a=>`
+    <div class="card">
+      <div class="top"><span class="aid">${a.agent_id}</span>
+        <span class="badge b-${a.role}">${a.role}</span></div>
+      <div class="kv"><span>latency</span><b class="${a.latency_ms>8000?'bad':''}">${a.latency_ms} ms</b></div>
+      <div class="bar"><i style="width:${Math.round(a.latency_ms/maxLat*100)}%"></i></div>
+      <div class="kv"><span>tokens</span><b>${f(a.tokens)}</b></div>
+      <div class="kv"><span>cost</span><b>${money(a.cost_usd)}</b></div>
+      <div class="kv"><span>status</span><b class="${a.bad?'bad':''}">${a.bad||'ok'}</b></div>
+    </div>`).join('') || '<div class="empty">select a run</div>';
+
+  $('tick').innerHTML=d.timeline.map(t=>`
+    <div class="row">
+      <span>${t.ts.slice(11,23)}</span>
+      <span class="et">${t.event_type}</span>
+      <span>${t.agent_id}${t.tool?' · '+t.tool:''}</span>
+      <span class="${t.status==='fail'?'rfail':'ok'}">${t.status}</span>
+    </div>`).join('');
+
+  $('autopsy').innerHTML=d.diagnosis
+    ? `<h4>meta-agent over ClickHouse</h4>${d.diagnosis.replace(/[<>]/g,'')}`
+    : '<span class="empty">No autopsy yet. Run run_autopsy.py &lt;run_id&gt;.</span>';
+}
+function pick(id){SEL=id;detail(id);}
+tick(); setInterval(tick,1500);
+</script>
+</body>
+</html>

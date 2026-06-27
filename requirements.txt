@@ -1,0 +1,7 @@
+google-genai
+tavily-python
+clickhouse-connect
+modal
+fastapi
+uvicorn
+python-dotenv
